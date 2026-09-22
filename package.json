@@ -1,0 +1,22 @@
+{
+  "name": "invest-ai",
+  "version": "1.0.0",
+  "description": "Invest AI - Motor de análisis de mercado, predicción y gestión algorítmica de inversiones",
+  "type": "module",
+  "scripts": {
+    "test:security": "node --test tests/security/zero-trust.test.js",
+    "audit:secrets": "node scripts/audit-secrets.js",
+    "audit:monoliths": "node scripts/audit-monoliths.js",
+    "audit:deploy": "node scripts/audit-deployment.js",
+    "harness:check": "npm run test:security && npm run audit:secrets && npm run audit:monoliths && npm run audit:deploy"
+  },
+  "keywords": [
+    "invest-ai",
+    "fintech",
+    "cloud-run",
+    "firebase",
+    "gcs"
+  ],
+  "author": "Miguel Jimenez",
+  "license": "UNLICENSED"
+}
