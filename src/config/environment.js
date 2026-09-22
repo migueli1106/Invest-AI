@@ -23,6 +23,14 @@ const EnvironmentSchema = z.object({
   ALPACA_BASE_URL: z.string().default('https://paper-api.alpaca.markets'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
+
+  // Meta Cloud API (WhatsApp Business)
+  META_WHATSAPP_TOKEN: z.string().optional(),
+  META_WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  META_WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
+  META_WHATSAPP_VERIFY_TOKEN: z.string().default('invest_ai_secret_token'),
+  ADMIN_WHATSAPP_NUMBER: z.string().optional(),
+
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 
