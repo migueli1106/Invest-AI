@@ -2,6 +2,7 @@ import { env } from '../config/environment.js';
 import { getSignalsCollection } from '../db/firestore.js';
 import { whatsappService } from '../services/whatsappService.js';
 import { twilioService } from '../services/twilioService.js';
+import { telegramService } from '../services/telegramService.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para WhatsApp
@@ -141,6 +142,82 @@ class WebhookHandler {
     } catch (err) {
       console.error(`❌ [TWILIO WEBHOOK] Error: ${err.message}`);
       return { status: 200, result: { error: err.message }, twiml: '<Response></Response>' };
+    }
+  }
+
+  /**
+   * Procesa eventos y actualizaciones entrantes de Telegram Bot API (POST /webhook/telegram).
+   * Soporta botones inline táctiles (callback_query) y comandos de texto (/start, /status, /estado).
+   * @param {object} update - Objeto Update de Telegram
+   * @param {object} [options={ updateDb: true }] - Opciones operativas
+   */
+  async handleTelegramUpdate(update, options = { updateDb: true }) {
+    try {
+      // 1. Manejo de botones táctiles inline (Callback Query)
+      if (update?.callback_query) {
+        const cq = update.callback_query;
+        const from = cq.from;
+        const data = cq.data || '';
+        const callbackQueryId = cq.id;
+        const chatId = cq.message?.chat?.id;
+
+        console.info(`📬 [TELEGRAM CLICK] De ${from?.first_name || from?.id}: Botón presionado '${data}' (ID: ${callbackQueryId})`);
+
+        if (data.startsWith('approve_')) {
+          const symbol = data.split('_')[1] || 'ACTIVO';
+          if (options.updateDb) {
+            await this.updateSignalStatus(symbol, 'APPROVED', String(from?.id || 'telegram_user'));
+          }
+          await telegramService.answerCallbackQuery(callbackQueryId, '¡Operación autorizada!');
+          if (chatId) {
+            await telegramService.sendMessage(
+              chatId,
+              `✅ *¡OPERACIÓN APROBADA!*\n\nHas autorizado la compra de *${symbol}*.\n\n📱 *Paso siguiente:* Abre Happi para colocar la orden al precio sugerido.`
+            );
+          }
+          return { status: 200, result: { action: 'APPROVED', symbol } };
+
+        } else if (data.startsWith('reject_')) {
+          const symbol = data.split('_')[1] || 'ACTIVO';
+          if (options.updateDb) {
+            await this.updateSignalStatus(symbol, 'REJECTED', String(from?.id || 'telegram_user'));
+          }
+          await telegramService.answerCallbackQuery(callbackQueryId, 'Operación descartada');
+          if (chatId) {
+            await telegramService.sendMessage(
+              chatId,
+              `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada. Tu capital permanece protegido.`
+            );
+          }
+          return { status: 200, result: { action: 'REJECTED', symbol } };
+        }
+      }
+
+      // 2. Manejo de comandos y mensajes de texto
+      if (update?.message?.text) {
+        const msg = update.message;
+        const text = msg.text.trim();
+        const chatId = msg.chat?.id;
+
+        console.info(`📬 [TELEGRAM MENSAJE] De ${chatId}: "${text}"`);
+
+        if (text.startsWith('/status') || text.startsWith('/estado')) {
+          const statusText = `🤖 *Invest AI Status:*\nEl motor cuantitativo está activo y monitoreando Wall Street en Google Cloud Run.`;
+          if (chatId) await telegramService.sendMessage(chatId, statusText);
+          return { status: 200, result: { action: 'STATUS', chatId } };
+
+        } else if (text.startsWith('/start')) {
+          const welcomeText = `👋 *¡Bienvenido a Invest AI Bot!*\n\nTu canal seguro para recibir señales de inversión y autorizarlas con 1-clic.\n\n🆔 *Tu Chat ID es:* \`${chatId}\`\n\n_Copia este ID en tu variable TELEGRAM_CHAT_ID para recibir alertas personalizadas._`;
+          if (chatId) await telegramService.sendMessage(chatId, welcomeText);
+          return { status: 200, result: { action: 'START', chatId } };
+        }
+      }
+
+      return { status: 200, result: { received: true } };
+
+    } catch (err) {
+      console.error(`❌ [TELEGRAM WEBHOOK] Error: ${err.message}`);
+      return { status: 200, result: { error: err.message } };
     }
   }
 

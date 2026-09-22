@@ -4,6 +4,7 @@ import { webhookHandler } from './api/webhookHandler.js';
 import { predictionEngine } from './services/predictionEngine.js';
 import { twilioService } from './services/twilioService.js';
 import { whatsappService } from './services/whatsappService.js';
+import { telegramService } from './services/telegramService.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
@@ -70,7 +71,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 5. Endpoint de Disparo Manual de Alerta por Twilio (POST /api/dispatch/twilio/:symbol)
+  // 5. Webhook de Telegram Bot API (POST /webhook/telegram)
+  if (method === 'POST' && url.pathname === '/webhook/telegram') {
+    let bodyData = '';
+    req.on('data', (chunk) => { bodyData += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(bodyData || '{}');
+        const response = await webhookHandler.handleTelegramUpdate(payload);
+        res.writeHead(response.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(response.result));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Payload JSON inválido para Telegram' }));
+      }
+    });
+    return;
+  }
+
+  // 6. Endpoint de Disparo Manual de Alerta por Telegram (POST /api/dispatch/telegram/:symbol)
+  if (method === 'POST' && url.pathname.startsWith('/api/dispatch/telegram/')) {
+    const symbol = url.pathname.split('/')[4];
+    const targetChatId = url.searchParams.get('chatId') || env.TELEGRAM_CHAT_ID || 'SIMULATED';
+
+    try {
+      const signal = await predictionEngine.generateSignal(symbol);
+      const telegramResult = await telegramService.sendSignalAlert(targetChatId, signal);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, channel: 'telegram', signal, telegramResult }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 7. Endpoint de Disparo Manual de Alerta por Twilio (POST /api/dispatch/twilio/:symbol)
   if (method === 'POST' && url.pathname.startsWith('/api/dispatch/twilio/')) {
     const symbol = url.pathname.split('/')[4];
     const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
@@ -87,7 +123,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 6. Endpoint de Disparo Manual de Alerta por Meta (POST /api/dispatch/:symbol)
+  // 8. Endpoint de Disparo Manual de Alerta por Meta (POST /api/dispatch/:symbol)
   if (method === 'POST' && url.pathname.startsWith('/api/dispatch/')) {
     const symbol = url.pathname.split('/')[3];
     const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
@@ -114,9 +150,10 @@ const PORT = env.PORT || 8080;
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
-    console.info(`👉 Healthcheck:      http://localhost:${PORT}/health`);
-    console.info(`👉 Webhook Twilio:   http://localhost:${PORT}/webhook/twilio`);
-    console.info(`👉 Webhook Meta:     http://localhost:${PORT}/webhook`);
+    console.info(`👉 Healthcheck:        http://localhost:${PORT}/health`);
+    console.info(`👉 Webhook Telegram:   http://localhost:${PORT}/webhook/telegram`);
+    console.info(`👉 Webhook Twilio:     http://localhost:${PORT}/webhook/twilio`);
+    console.info(`👉 Webhook Meta:       http://localhost:${PORT}/webhook`);
   });
 }
 

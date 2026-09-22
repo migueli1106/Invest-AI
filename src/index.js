@@ -1,6 +1,7 @@
 import { assetTrackerService } from './services/assetTrackerService.js';
 import { predictionEngine } from './services/predictionEngine.js';
 import { twilioService } from './services/twilioService.js';
+import { telegramService } from './services/telegramService.js';
 
 /**
  * 🚀 [INVEST AI] Orquestador de Operaciones CLI y Cloud Run
@@ -68,13 +69,25 @@ async function main() {
 
   } else if (command === '--notify' && args[1]) {
     const symbol = args[1];
-    const targetPhone = args[2] || process.env.ADMIN_WHATSAPP_NUMBER;
+    const isTelegramOnly = args.includes('--telegram');
+    const targetPhone = !isTelegramOnly && args[2] && !args[2].startsWith('--') ? args[2] : process.env.ADMIN_WHATSAPP_NUMBER;
+    const targetChatId = process.env.TELEGRAM_CHAT_ID;
+
     console.info(`📡 [INVEST AI] Analizando ${symbol} para despacho de alerta...`);
     const signal = await predictionEngine.generateSignal(symbol);
     renderSignalCard(signal);
-    console.info(`📲 [TWILIO] Despachando señal a WhatsApp (${targetPhone || 'SIMULADO'})...`);
-    const twilioResult = await twilioService.sendSignalAlert(targetPhone, signal);
-    console.info('✅ [TWILIO] Resultado de despacho:', twilioResult);
+
+    if (isTelegramOnly || process.env.TELEGRAM_BOT_TOKEN) {
+      console.info(`✈️ [TELEGRAM] Despachando señal a Telegram (${targetChatId || 'SIMULADO'})...`);
+      const tgResult = await telegramService.sendSignalAlert(targetChatId, signal);
+      console.info('✅ [TELEGRAM] Resultado de despacho:', tgResult.simulated ? 'Simulado' : 'Enviado');
+    }
+
+    if (!isTelegramOnly) {
+      console.info(`📲 [TWILIO] Despachando señal a WhatsApp (${targetPhone || 'SIMULADO'})...`);
+      const twilioResult = await twilioService.sendSignalAlert(targetPhone, signal);
+      console.info('✅ [TWILIO] Resultado de despacho:', twilioResult.simulated ? 'Simulado' : 'Enviado');
+    }
 
   } else if (command === '--signals') {
     const defaultWatchlist = ['AAPL', 'NVDA', 'MSFT', 'SPY', 'QQQ'];
