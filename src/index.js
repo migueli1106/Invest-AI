@@ -1,5 +1,6 @@
 import { assetTrackerService } from './services/assetTrackerService.js';
 import { predictionEngine } from './services/predictionEngine.js';
+import { twilioService } from './services/twilioService.js';
 
 /**
  * 🚀 [INVEST AI] Orquestador de Operaciones CLI y Cloud Run
@@ -64,6 +65,16 @@ async function main() {
     const symbol = args[1];
     const signal = await predictionEngine.generateSignal(symbol);
     renderSignalCard(signal);
+
+  } else if (command === '--notify' && args[1]) {
+    const symbol = args[1];
+    const targetPhone = args[2] || process.env.ADMIN_WHATSAPP_NUMBER;
+    console.info(`📡 [INVEST AI] Analizando ${symbol} para despacho de alerta...`);
+    const signal = await predictionEngine.generateSignal(symbol);
+    renderSignalCard(signal);
+    console.info(`📲 [TWILIO] Despachando señal a WhatsApp (${targetPhone || 'SIMULADO'})...`);
+    const twilioResult = await twilioService.sendSignalAlert(targetPhone, signal);
+    console.info('✅ [TWILIO] Resultado de despacho:', twilioResult);
 
   } else if (command === '--signals') {
     const defaultWatchlist = ['AAPL', 'NVDA', 'MSFT', 'SPY', 'QQQ'];
