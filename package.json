@@ -10,7 +10,7 @@
     "list": "node src/index.js --list",
     "signals": "node src/index.js --signals",
     "test:security": "node --test tests/security/zero-trust.test.js",
-    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js",
+    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js tests/unit/twilio.test.js",
     "audit:secrets": "node scripts/audit-secrets.js",
     "audit:monoliths": "node scripts/audit-monoliths.js",
     "audit:deploy": "node scripts/audit-deployment.js",
@@ -22,6 +22,7 @@
     "cloud-run",
     "firebase",
     "gcs",
+    "twilio-whatsapp",
     "whatsapp-business"
   ],
   "author": "Miguel Jimenez",

@@ -24,12 +24,17 @@ const EnvironmentSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
 
-  // Meta Cloud API (WhatsApp Business)
+  // Twilio WhatsApp API (Sandbox / Producción)
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_WHATSAPP_NUMBER: z.string().default('whatsapp:+14155238886'),
+  ADMIN_WHATSAPP_NUMBER: z.string().optional(),
+
+  // Meta Cloud API (WhatsApp Business - Canal Alternativo)
   META_WHATSAPP_TOKEN: z.string().optional(),
   META_WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
   META_WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
   META_WHATSAPP_VERIFY_TOKEN: z.string().default('invest_ai_secret_token'),
-  ADMIN_WHATSAPP_NUMBER: z.string().optional(),
 
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });

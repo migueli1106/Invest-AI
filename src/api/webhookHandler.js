@@ -1,17 +1,17 @@
 import { env } from '../config/environment.js';
 import { getSignalsCollection } from '../db/firestore.js';
 import { whatsappService } from '../services/whatsappService.js';
+import { twilioService } from '../services/twilioService.js';
 
 /**
- * 📥 [INVEST AI] Controlador de Webhook de Meta Cloud API
- * Maneja el apretón de manos (handshake) y procesa los clics de botones interactivos.
+ * 📥 [INVEST AI] Controlador Unificado de Webhooks para WhatsApp
+ * Soporta tanto Meta Cloud API como Twilio WhatsApp Sandbox para Human-in-the-Loop.
  */
 
 class WebhookHandler {
   /**
    * Valida el token de verificación con Meta (GET /webhook).
-   * @param {URLSearchParams} queryParams - Parámetros de la URL
-   * @returns {{ status: number, body: string }}
+   * @param {URLSearchParams} queryParams
    */
   handleVerification(queryParams) {
     const mode = queryParams.get('hub.mode');
@@ -30,10 +30,9 @@ class WebhookHandler {
   }
 
   /**
-   * Procesa las respuestas interactivas de botones desde WhatsApp (POST /webhook).
-   * @param {object} payload - Cuerpo JSON enviado por Meta
-   * @param {object} [options={ updateDb: true }] - Opciones de ejecución (desactivable en tests)
-   * @returns {Promise<{ status: number, result: object }>}
+   * Procesa respuestas de Meta Cloud API (POST /webhook).
+   * @param {object} payload
+   * @param {object} [options={ updateDb: true }]
    */
   async handleIncomingEvent(payload, options = { updateDb: true }) {
     try {
@@ -42,13 +41,10 @@ class WebhookHandler {
       const value = change?.value;
       const message = value?.messages?.[0];
 
-      if (!message) {
-        return { status: 200, result: { ignored: true } };
-      }
+      if (!message) return { status: 200, result: { ignored: true } };
 
       const from = message.from;
 
-      // 1. Detección de clics en botones interactivos
       if (message.type === 'interactive' && message.interactive?.button_reply) {
         const buttonId = message.interactive.button_reply.id;
         const buttonTitle = message.interactive.button_reply.title;
@@ -56,69 +52,120 @@ class WebhookHandler {
         console.info(`📬 [WHATSAPP CLICK] De ${from}: Botón presionado '${buttonTitle}' (ID: ${buttonId})`);
 
         if (buttonId.startsWith('approve_')) {
-          const parts = buttonId.split('_');
-          const symbol = parts[1] || 'ACTIVO';
-
-          // Actualizar estado en Firestore si updateDb está habilitado
-          if (options.updateDb) {
-            try {
-              const querySnapshot = await getSignalsCollection()
-                .where('symbol', '==', symbol)
-                .where('status', '==', 'PENDING_APPROVAL')
-                .limit(1)
-                .get();
-
-              if (!querySnapshot.empty) {
-                const doc = querySnapshot.docs[0];
-                await doc.ref.update({
-                  status: 'APPROVED',
-                  approvedAt: new Date().toISOString(),
-                  approvedBy: from,
-                });
-                console.info(`💾 [FIRESTORE] Señal ${doc.id} para ${symbol} marcada como APPROVED.`);
-              }
-            } catch (dbErr) {
-              console.warn(`⚠️ [FIRESTORE] No se pudo actualizar estado en BD: ${dbErr.message}`);
-            }
-          }
-
-          // Respuesta instantánea al WhatsApp de Miguel
-          await whatsappService.sendTextMessage(
-            from,
-            `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n\n📱 *Paso siguiente:* Abre Happi para colocar la orden al precio sugerido. \n\n_Invest AI ha registrado tu autorización._`
-          );
-
+          const symbol = buttonId.split('_')[1] || 'ACTIVO';
+          if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
+          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n\n📱 *Paso siguiente:* Abre Happi para colocar la orden al precio sugerido.`);
           return { status: 200, result: { action: 'APPROVED', symbol } };
-
         } else if (buttonId.startsWith('reject_')) {
-          const parts = buttonId.split('_');
-          const symbol = parts[1] || 'ACTIVO';
-
-          await whatsappService.sendTextMessage(
-            from,
-            `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada. El capital permanece protegido.`
-          );
-
+          const symbol = buttonId.split('_')[1] || 'ACTIVO';
+          if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', from);
+          await whatsappService.sendTextMessage(from, `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada. El capital permanece protegido.`);
           return { status: 200, result: { action: 'REJECTED', symbol } };
         }
       }
 
-      // Respuesta a mensajes de texto regulares
-      if (message.type === 'text') {
-        const text = message.text?.body?.toLowerCase();
-        if (text?.includes('estado') || text?.includes('status')) {
-          await whatsappService.sendTextMessage(
-            from,
-            `🤖 *Invest AI Bot:* El motor cuantitativo está activo y monitoreando Wall Street en Cloud Run.`
-          );
+      return { status: 200, result: { received: true } };
+    } catch (err) {
+      console.error(`❌ [WEBHOOK] Error procesando Meta: ${err.message}`);
+      return { status: 200, result: { error: err.message } };
+    }
+  }
+
+  /**
+   * Procesa mensajes y respuestas entrantes de Twilio WhatsApp (POST /webhook/twilio).
+   * @param {URLSearchParams} formParams - Parámetros form-urlencoded de Twilio
+   * @param {object} [options={ updateDb: true }]
+   */
+  async handleTwilioIncoming(formParams, options = { updateDb: true }) {
+    try {
+      const from = formParams.get('From') || '';
+      const body = (formParams.get('Body') || '').trim();
+      const upperBody = body.toUpperCase();
+
+      console.info(`📬 [TWILIO WHATSAPP] Mensaje recibido de ${from}: "${body}"`);
+
+      if (upperBody === 'APROBAR' || upperBody === 'SI' || upperBody === 'SÍ' || upperBody.startsWith('APROBAR')) {
+        let symbol = 'ACTIVO';
+        if (upperBody.includes(' ')) {
+          symbol = upperBody.split(' ')[1];
         }
+
+        if (options.updateDb) {
+          await this.updateSignalStatus(symbol, 'APPROVED', from);
+        }
+
+        const replyText = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra. \n\n📱 *Paso siguiente:* Abre tu broker (Happi) y ejecuta la orden al precio sugerido. \n\n_Invest AI ha registrado tu autorización._`;
+        await twilioService.sendTextMessage(from, replyText);
+
+        return {
+          status: 200,
+          result: { action: 'APPROVED', from, symbol },
+          twiml: `<Response><Message>${replyText}</Message></Response>`,
+        };
+
+      } else if (upperBody === 'RECHAZAR' || upperBody === 'NO' || upperBody.startsWith('RECHAZAR')) {
+        let symbol = 'ACTIVO';
+        if (upperBody.includes(' ')) {
+          symbol = upperBody.split(' ')[1];
+        }
+
+        if (options.updateDb) {
+          await this.updateSignalStatus(symbol, 'REJECTED', from);
+        }
+
+        const replyText = `❌ *OPERACIÓN RECHAZADA*\n\nLa señal de inversión ha sido descartada. Tu capital permanece 100% protegido.`;
+        await twilioService.sendTextMessage(from, replyText);
+
+        return {
+          status: 200,
+          result: { action: 'REJECTED', from, symbol },
+          twiml: `<Response><Message>${replyText}</Message></Response>`,
+        };
+
+      } else if (upperBody.includes('ESTADO') || upperBody.includes('STATUS')) {
+        const replyText = `🤖 *Invest AI Status:*\nEl motor cuantitativo está activo y monitoreando Wall Street en Google Cloud Run.`;
+        await twilioService.sendTextMessage(from, replyText);
+        return {
+          status: 200,
+          result: { action: 'STATUS', from },
+          twiml: `<Response><Message>${replyText}</Message></Response>`,
+        };
       }
 
-      return { status: 200, result: { received: true } };
+      return {
+        status: 200,
+        result: { action: 'UNKNOWN', body },
+        twiml: `<Response></Response>`,
+      };
 
     } catch (err) {
-      console.error(`❌ [WEBHOOK] Error procesando mensaje de WhatsApp: ${err.message}`);
-      return { status: 200, result: { error: err.message } };
+      console.error(`❌ [TWILIO WEBHOOK] Error: ${err.message}`);
+      return { status: 200, result: { error: err.message }, twiml: '<Response></Response>' };
+    }
+  }
+
+  /**
+   * Actualiza el estado de la señal en Firestore de forma segura.
+   */
+  async updateSignalStatus(symbol, status, userPhone) {
+    try {
+      let query = getSignalsCollection().where('status', '==', 'PENDING_APPROVAL');
+      if (symbol && symbol !== 'ACTIVO') {
+        query = query.where('symbol', '==', symbol);
+      }
+      const snapshot = await query.limit(1).get();
+
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        await doc.ref.update({
+          status,
+          resolvedAt: new Date().toISOString(),
+          resolvedBy: userPhone,
+        });
+        console.info(`💾 [FIRESTORE] Señal ${doc.id} actualizada a estado: ${status}`);
+      }
+    } catch (dbErr) {
+      console.warn(`⚠️ [FIRESTORE] No se pudo actualizar estado: ${dbErr.message}`);
     }
   }
 }

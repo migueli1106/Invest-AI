@@ -2,11 +2,12 @@ import http from 'http';
 import { env } from './config/environment.js';
 import { webhookHandler } from './api/webhookHandler.js';
 import { predictionEngine } from './services/predictionEngine.js';
+import { twilioService } from './services/twilioService.js';
 import { whatsappService } from './services/whatsappService.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
- * Soporta healthcheck para Cloud Run y webhooks de Meta WhatsApp.
+ * Soporta healthcheck para Cloud Run, webhooks de Twilio y Meta WhatsApp.
  */
 
 const server = http.createServer(async (req, res) => {
@@ -51,7 +52,42 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 4. Endpoint de Disparo Manual de Señal a WhatsApp (POST /api/dispatch/:symbol)
+  // 4. Webhook de Respuestas Entrantes de Twilio WhatsApp (POST /webhook/twilio)
+  if (method === 'POST' && url.pathname === '/webhook/twilio') {
+    let bodyData = '';
+    req.on('data', (chunk) => { bodyData += chunk; });
+    req.on('end', async () => {
+      try {
+        const formParams = new URLSearchParams(bodyData);
+        const response = await webhookHandler.handleTwilioIncoming(formParams);
+        res.writeHead(response.status, { 'Content-Type': 'application/xml' });
+        res.end(response.twiml);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/xml' });
+        res.end('<Response></Response>');
+      }
+    });
+    return;
+  }
+
+  // 5. Endpoint de Disparo Manual de Alerta por Twilio (POST /api/dispatch/twilio/:symbol)
+  if (method === 'POST' && url.pathname.startsWith('/api/dispatch/twilio/')) {
+    const symbol = url.pathname.split('/')[4];
+    const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
+
+    try {
+      const signal = await predictionEngine.generateSignal(symbol);
+      const twilioResult = await twilioService.sendSignalAlert(targetPhone, signal);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, channel: 'twilio', signal, twilioResult }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 6. Endpoint de Disparo Manual de Alerta por Meta (POST /api/dispatch/:symbol)
   if (method === 'POST' && url.pathname.startsWith('/api/dispatch/')) {
     const symbol = url.pathname.split('/')[3];
     const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
@@ -60,7 +96,7 @@ const server = http.createServer(async (req, res) => {
       const signal = await predictionEngine.generateSignal(symbol);
       const waResult = await whatsappService.sendSignalInteractiveCard(targetPhone, signal);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, signal, waResult }));
+      res.end(JSON.stringify({ success: true, channel: 'meta', signal, waResult }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: err.message }));
@@ -78,8 +114,9 @@ const PORT = env.PORT || 8080;
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
-    console.info(`👉 Healthcheck: http://localhost:${PORT}/health`);
-    console.info(`👉 Webhook Meta: http://localhost:${PORT}/webhook`);
+    console.info(`👉 Healthcheck:      http://localhost:${PORT}/health`);
+    console.info(`👉 Webhook Twilio:   http://localhost:${PORT}/webhook/twilio`);
+    console.info(`👉 Webhook Meta:     http://localhost:${PORT}/webhook`);
   });
 }
 
