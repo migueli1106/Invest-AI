@@ -56,8 +56,27 @@ export const PortfolioHoldingSchema = z.object({
   shares: z.number().positive(),
   averageBuyPrice: z.number().positive(),
   totalCost: z.number().positive(),
-  currentMarketValue: z.number().positive(),
-  unrealizedPnL: z.number(),
-  unrealizedPnLPercent: z.number(),
+  currentMarketValue: z.number().positive().optional(),
+  unrealizedPnL: z.number().optional(),
+  unrealizedPnLPercent: z.number().optional(),
+  broker: z.enum(['Happi', 'Osmo', 'Other']).default('Happi'),
+  status: z.enum(['OPEN', 'CLOSED']).default('OPEN'),
+  stopLoss: z.number().positive().optional(),
+  targetPrice: z.number().positive().optional(),
+  openedAt: z.string(),
+  closedAt: z.string().optional(),
+  realizedPnL: z.number().optional(),
+  realizedPnLPercent: z.number().optional(),
   lastUpdated: z.string(),
 });
+
+// 5. Esquema de Entrada para Nueva Posición
+export const PositionInputSchema = z.object({
+  symbol: z.string().min(1).toUpperCase(),
+  shares: z.number().positive(),
+  buyPrice: z.number().positive(),
+  broker: z.enum(['Happi', 'Osmo', 'Other']).default('Happi'),
+  stopLoss: z.number().positive().optional(),
+  targetPrice: z.number().positive().optional(),
+});
+

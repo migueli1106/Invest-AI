@@ -2,10 +2,12 @@ import { assetTrackerService } from './services/assetTrackerService.js';
 import { predictionEngine } from './services/predictionEngine.js';
 import { twilioService } from './services/twilioService.js';
 import { telegramService } from './services/telegramService.js';
+import { portfolioService } from './services/portfolioService.js';
+import { schedulerService } from './services/schedulerService.js';
 
 /**
  * 🚀 [INVEST AI] Orquestador de Operaciones CLI y Cloud Run
- * Gestiona ingesta, monitoreo en vivo y generación algorítmica de señales.
+ * Gestiona ingesta, monitoreo en vivo, generación algorítmica de señales y portafolio.
  */
 
 // Manejo defensivo de credenciales en entorno local sin ADC
@@ -66,6 +68,63 @@ async function main() {
     const symbol = args[1];
     const signal = await predictionEngine.generateSignal(symbol);
     renderSignalCard(signal);
+
+  } else if (command === '--portfolio') {
+    console.info('💼 [INVEST AI] Calculando rendimiento y valoración en vivo de la cartera...');
+    const performance = await portfolioService.calculatePortfolioPerformance();
+    const { summary, positions } = performance;
+
+    if (positions.length === 0) {
+      console.info('ℹ️ No hay posiciones abiertas registradas en el portafolio.');
+    } else {
+      console.info(`\n📊 RESUMEN GLOBAL (Posiciones Abiertas: ${summary.count ?? summary.openPositionsCount ?? positions.length}):`);
+      console.table([{
+        'Inversión Total': `$${summary.totalCostBasis.toFixed(2)}`,
+        'Valor Actual': `$${summary.totalMarketValue.toFixed(2)}`,
+        'P&L No Realizado ($)': `${summary.totalUnrealizedPnL >= 0 ? '+' : ''}$${summary.totalUnrealizedPnL.toFixed(2)}`,
+        'P&L No Realizado (%)': `${summary.totalUnrealizedPnLPercent >= 0 ? '+' : ''}${summary.totalUnrealizedPnLPercent.toFixed(2)}%`,
+      }]);
+
+      console.info('\n📋 DETALLE DE POSICIONES ABIERTAS:');
+      console.table(positions.map((p) => ({
+        ID: (p.id || '').substring(0, 14),
+        Broker: p.broker,
+        Activo: p.symbol,
+        Acciones: p.shares,
+        'Compra': `$${p.averageBuyPrice.toFixed(2)}`,
+        'Actual': `$${p.currentPrice.toFixed(2)}`,
+        'P&L ($)': `${p.unrealizedPnL >= 0 ? '+' : ''}$${p.unrealizedPnL.toFixed(2)}`,
+        'P&L (%)': `${p.unrealizedPnLPercent >= 0 ? '+' : ''}${p.unrealizedPnLPercent.toFixed(2)}%`,
+        'Target': p.targetPrice ? `$${p.targetPrice.toFixed(2)}` : '-',
+        'Stop Loss': p.stopLoss ? `$${p.stopLoss.toFixed(2)}` : '-',
+      })));
+
+      const triggers = await portfolioService.checkExitTriggers(positions);
+      if (triggers.length > 0) {
+        console.info('\n🚨 [ALERTA] DISPARADORES DE SALIDA ACTIVADOS:');
+        triggers.forEach((t) => {
+          console.info(`  • [${t.trigger || t.type}] ${t.symbol} en ${t.broker}: ${t.message || t.rationale}`);
+        });
+      }
+    }
+
+  } else if (command === '--buy' && args[1] && args[2] && args[3]) {
+    const symbol = args[1].toUpperCase();
+    const shares = parseFloat(args[2]);
+    const buyPrice = parseFloat(args[3]);
+    const broker = args[4] || 'Happi';
+    const stopLoss = args[5] ? parseFloat(args[5]) : undefined;
+    const targetPrice = args[6] ? parseFloat(args[6]) : undefined;
+
+    console.info(`💼 Registrando compra de ${shares} acciones de ${symbol} a $${buyPrice} en ${broker}...`);
+    const pos = await portfolioService.addPosition({ symbol, shares, buyPrice, broker, stopLoss, targetPrice });
+    console.info(`✅ [PORTFOLIO] Posición creada exitosamente: ID ${pos.id} en ${pos.broker}`);
+    console.info(`   Target Price: $${pos.targetPrice} | Stop Loss: $${pos.stopLoss}`);
+
+  } else if (command === '--cron-scan') {
+    console.info('🔄 Ejecutando escaneo autónomo programado...');
+    const result = await schedulerService.runAutonomousMarketScan(undefined, true);
+    console.info(`✅ Escaneo completado: ${result.dispatchedCount} alertas despachadas de ${result.scannedCount} analizados.`);
 
   } else if (command === '--notify' && args[1]) {
     const symbol = args[1];
