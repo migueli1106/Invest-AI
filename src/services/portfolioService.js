@@ -1,25 +1,23 @@
 import { getPortfolioCollection } from '../db/firestore.js';
 import { PortfolioHoldingSchema } from '../models/schemas.js';
 import { marketDataService } from './marketDataService.js';
+import { alpacaService } from './alpacaService.js';
+import { capitalManagerService } from './capitalManagerService.js';
 import { env } from '../config/environment.js';
 
 /**
  * 💼 [INVEST AI] Servicio de Gestión y Valoración de Portafolio Real
- * Gestiona posiciones en brokers (Happi/Osmo), computa P&L en vivo y detecta salidas TP/SL.
+ * Gestiona posiciones en brokers (Happi/Osmo/Alpaca), computa P&L y rotación de capital.
  */
 
 class PortfolioService {
   constructor() {
-    // Almacén en memoria defensivo para tests y entornos locales sin credenciales ADC
     this.localPositions = [];
     this.memoryPositions = {
-      set: (id, pos) => {
+      set: (id, val) => {
         const idx = this.localPositions.findIndex((p) => p.id === id);
-        if (idx >= 0) {
-          this.localPositions[idx] = { id, ...pos };
-        } else {
-          this.localPositions.push({ id, ...pos });
-        }
+        if (idx >= 0) this.localPositions[idx] = val;
+        else this.localPositions.push({ id, ...val });
       },
       get: (id) => this.localPositions.find((p) => p.id === id),
       clear: () => { this.localPositions = []; },
@@ -33,7 +31,6 @@ class PortfolioService {
 
   /**
    * Registra una nueva posición de compra ejecutada en el broker.
-   * @param {object} params
    */
   async addPosition({ symbol, shares, buyPrice, broker = 'Happi', stopLoss, targetPrice }) {
     const cleanSymbol = symbol.trim().toUpperCase();
@@ -80,7 +77,6 @@ class PortfolioService {
 
   /**
    * Obtiene todas las posiciones actualmente abiertas.
-   * @returns {Promise<object[]>}
    */
   async getOpenPositions() {
     if (this.isTest()) {
@@ -100,9 +96,7 @@ class PortfolioService {
   }
 
   /**
-   * Cierra una posición abierta, registrando el precio de salida y computando P&L realizado.
-   * @param {string} positionId - ID del documento en Firestore
-   * @param {number} closePrice - Precio de venta por acción
+   * Cierra una posición abierta, registra precio de salida y rota el capital devuelto.
    */
   async closePosition(positionId, closePrice) {
     const cleanClosePrice = Number(closePrice);
@@ -117,45 +111,35 @@ class PortfolioService {
       try {
         docRef = getPortfolioCollection().doc(positionId);
         const docSnap = await docRef.get();
-        if (docSnap.exists) {
-          currentData = docSnap.data();
-        }
+        if (docSnap.exists) currentData = docSnap.data();
       } catch (err) {
         console.warn(`⚠️ [FIRESTORE] Consulta fallback para cierre: ${err.message}`);
       }
     }
 
-    if (!currentData) {
-      currentData = this.localPositions.find((p) => p.id === positionId);
-    }
-
-    if (!currentData) {
-      throw new Error(`Posición no encontrada con ID: ${positionId}`);
-    }
-
-    if (currentData.status === 'CLOSED') {
-      throw new Error(`La posición ${currentData.symbol} ya se encuentra cerrada.`);
-    }
+    if (!currentData) currentData = this.localPositions.find((p) => p.id === positionId);
+    if (!currentData) throw new Error(`Posición no encontrada con ID: ${positionId}`);
+    if (currentData.status === 'CLOSED') throw new Error(`La posición ${currentData.symbol} ya está cerrada.`);
 
     const shares = currentData.shares;
     const buyPrice = currentData.averageBuyPrice;
     const realizedPnL = parseFloat(((cleanClosePrice - buyPrice) * shares).toFixed(2));
     const realizedPnLPercent = parseFloat((((cleanClosePrice - buyPrice) / buyPrice) * 100).toFixed(2));
     const closedAt = new Date().toISOString();
+    const marketValue = parseFloat((cleanClosePrice * shares).toFixed(2));
 
     const updateFields = {
       status: 'CLOSED',
       closedAt,
       realizedPnL,
       realizedPnLPercent,
-      currentMarketValue: parseFloat((cleanClosePrice * shares).toFixed(2)),
+      currentMarketValue: marketValue,
       lastUpdated: closedAt,
     };
 
     if (!this.isTest() && docRef) {
       try {
         await docRef.update(updateFields);
-        console.info(`💾 [FIRESTORE] Posición ${positionId} cerrada. P&L Realizado: $${realizedPnL} (${realizedPnLPercent >= 0 ? '+' : ''}${realizedPnLPercent}%)`);
       } catch (err) {
         console.warn(`⚠️ [FIRESTORE] Actualización simulada: ${err.message}`);
       }
@@ -164,17 +148,65 @@ class PortfolioService {
     const local = this.localPositions.find((p) => p.id === positionId);
     if (local) Object.assign(local, updateFields);
 
-    return {
-      id: positionId,
-      ...currentData,
-      ...updateFields,
-    };
+    // Rotación de Capital: Reintegrar capital al pool disponible
+    capitalManagerService.releaseCapital(positionId, marketValue);
+
+    return { id: positionId, ...currentData, ...updateFields };
   }
 
   /**
-   * Calcula el rendimiento consolidado del portafolio cruzando posiciones abiertas con precios en vivo.
-   * @param {object[]} [overridePositions] - Permite inyectar posiciones para testing determinista
-   * @returns {Promise<{ positions: object[], summary: object }>}
+   * Sincroniza posiciones activas en Alpaca con Firestore y el gestor de capital.
+   */
+  async syncWithAlpaca() {
+    try {
+      const account = await alpacaService.getAccount();
+      capitalManagerService.syncWithAlpacaBalance(account);
+
+      const positions = await alpacaService.getPositions();
+      const synced = [];
+
+      for (const p of positions) {
+        const symbol = p.symbol;
+        const shares = parseFloat(p.qty);
+        const buyPrice = parseFloat(p.avg_entry_price);
+        const currentPrice = parseFloat(p.current_price);
+        const marketValue = parseFloat(p.market_value);
+
+        const posData = {
+          symbol,
+          shares,
+          averageBuyPrice: buyPrice,
+          totalCost: parseFloat((shares * buyPrice).toFixed(2)),
+          currentMarketValue: marketValue,
+          unrealizedPnL: parseFloat(p.unrealized_pl || 0),
+          unrealizedPnLPercent: parseFloat((Number(p.unrealized_plpc || 0) * 100).toFixed(2)),
+          broker: 'Alpaca',
+          status: 'OPEN',
+          lastUpdated: new Date().toISOString(),
+        };
+
+        const docId = `alpaca_${symbol}`;
+        if (this.isTest()) {
+          this.memoryPositions.set(docId, { id: docId, ...posData });
+          synced.push({ id: docId, ...posData });
+        } else {
+          try {
+            await getPortfolioCollection().doc(docId).set(posData, { merge: true });
+            synced.push({ id: docId, ...posData });
+          } catch (err) {
+            console.warn(`⚠️ Fallo guardando posición Alpaca: ${err.message}`);
+          }
+        }
+      }
+      return { syncedCount: synced.length, positions: synced };
+    } catch (err) {
+      console.warn(`⚠️ [PORTFOLIO SYNC] Error: ${err.message}`);
+      return { syncedCount: 0, positions: [], error: err.message };
+    }
+  }
+
+  /**
+   * Calcula el rendimiento consolidado del portafolio.
    */
   async calculatePortfolioPerformance(overridePositions = null) {
     const rawPositions = overridePositions || await this.getOpenPositions();
@@ -182,19 +214,13 @@ class PortfolioService {
     if (!rawPositions || rawPositions.length === 0) {
       return {
         positions: [],
-        summary: {
-          totalCostBasis: 0,
-          totalMarketValue: 0,
-          totalUnrealizedPnL: 0,
-          totalUnrealizedPnLPercent: 0,
-          count: 0,
-        },
+        summary: { totalCostBasis: 0, totalMarketValue: 0, totalUnrealizedPnL: 0, totalUnrealizedPnLPercent: 0, count: 0 },
       };
     }
 
-    const enrichedPositions = [];
-    let totalCostBasis = 0;
-    let totalMarketValue = 0;
+    const enriched = [];
+    let totalCost = 0;
+    let totalValue = 0;
 
     for (const pos of rawPositions) {
       let currentPrice = pos.currentPrice;
@@ -202,16 +228,9 @@ class PortfolioService {
       if (currentPrice === undefined || currentPrice === null) {
         try {
           const quote = await marketDataService.getQuote(pos.symbol);
-          if (quote && quote.currentPrice > 0) {
-            currentPrice = quote.currentPrice;
-          }
+          if (quote && quote.currentPrice > 0) currentPrice = quote.currentPrice;
         } catch (err) {
-          console.warn(`⚠️ [MARKET DATA] No se obtuvo cotización fresca para ${pos.symbol}, usando último valor conocido: ${err.message}`);
-          if (pos.currentMarketValue && pos.shares > 0) {
-            currentPrice = pos.currentMarketValue / pos.shares;
-          } else {
-            currentPrice = pos.averageBuyPrice;
-          }
+          currentPrice = pos.currentMarketValue && pos.shares > 0 ? pos.currentMarketValue / pos.shares : pos.averageBuyPrice;
         }
       }
 
@@ -220,60 +239,40 @@ class PortfolioService {
       const unrealizedPnL = parseFloat((marketValue - costBasis).toFixed(2));
       const unrealizedPnLPercent = parseFloat((((currentPrice - pos.averageBuyPrice) / pos.averageBuyPrice) * 100).toFixed(2));
 
-      const distanceToTarget = pos.targetPrice
-        ? parseFloat((((pos.targetPrice - currentPrice) / currentPrice) * 100).toFixed(2))
-        : null;
+      totalCost += costBasis;
+      totalValue += marketValue;
 
-      const distanceToStopLoss = pos.stopLoss
-        ? parseFloat((((currentPrice - pos.stopLoss) / currentPrice) * 100).toFixed(2))
-        : null;
-
-      totalCostBasis += costBasis;
-      totalMarketValue += marketValue;
-
-      enrichedPositions.push({
+      enriched.push({
         ...pos,
         currentPrice: parseFloat(currentPrice.toFixed(2)),
         costBasis,
         currentMarketValue: marketValue,
         unrealizedPnL,
         unrealizedPnLPercent,
-        distanceToTarget,
-        distanceToStopLoss,
       });
     }
 
-    totalCostBasis = parseFloat(totalCostBasis.toFixed(2));
-    totalMarketValue = parseFloat(totalMarketValue.toFixed(2));
-    const totalUnrealizedPnL = parseFloat((totalMarketValue - totalCostBasis).toFixed(2));
-    const totalUnrealizedPnLPercent = totalCostBasis > 0
-      ? parseFloat(((totalUnrealizedPnL / totalCostBasis) * 100).toFixed(2))
-      : 0;
+    totalCost = parseFloat(totalCost.toFixed(2));
+    totalValue = parseFloat(totalValue.toFixed(2));
+    const totalPnL = parseFloat((totalValue - totalCost).toFixed(2));
+    const totalPnLPercent = totalCost > 0 ? parseFloat(((totalPnL / totalCost) * 100).toFixed(2)) : 0;
 
     return {
-      positions: enrichedPositions,
-      summary: {
-        totalCostBasis,
-        totalMarketValue,
-        totalUnrealizedPnL,
-        totalUnrealizedPnLPercent,
-        count: enrichedPositions.length,
-      },
+      positions: enriched,
+      summary: { totalCostBasis: totalCost, totalMarketValue: totalValue, totalUnrealizedPnL: totalPnL, totalUnrealizedPnLPercent: totalPnLPercent, count: enriched.length },
     };
   }
 
   /**
-   * Evalúa disparadores automáticos de salida (Take-Profit / Stop-Loss) sobre posiciones abiertas.
-   * @param {object[]} [overridePositions]
-   * @returns {Promise<object[]>} Lista de alertas de salida disparadas
+   * Evalúa disparadores automáticos de salida (Take-Profit / Stop-Loss).
    */
   async checkExitTriggers(overridePositions = null) {
     const { positions } = await this.calculatePortfolioPerformance(overridePositions);
-    const triggeredAlerts = [];
+    const triggered = [];
 
     for (const pos of positions) {
       if (pos.targetPrice && pos.currentPrice >= pos.targetPrice) {
-        triggeredAlerts.push({
+        triggered.push({
           positionId: pos.id,
           symbol: pos.symbol,
           broker: pos.broker,
@@ -288,11 +287,10 @@ class PortfolioService {
           unrealizedPnL: pos.unrealizedPnL,
           pnlPercent: pos.unrealizedPnLPercent,
           unrealizedPnLPercent: pos.unrealizedPnLPercent,
-          rationale: `El precio actual ($${pos.currentPrice}) alcanzó o superó el Target Price ($${pos.targetPrice}).`,
           message: `🎯 *¡TAKE-PROFIT ALCANZADO PARA ${pos.symbol}!* El precio ($${pos.currentPrice}) tocó tu meta ($${pos.targetPrice}). Rendimiento: +${pos.unrealizedPnLPercent}%. Cierra en ${pos.broker}.`,
         });
       } else if (pos.stopLoss && pos.currentPrice <= pos.stopLoss) {
-        triggeredAlerts.push({
+        triggered.push({
           positionId: pos.id,
           symbol: pos.symbol,
           broker: pos.broker,
@@ -307,13 +305,12 @@ class PortfolioService {
           unrealizedPnL: pos.unrealizedPnL,
           pnlPercent: pos.unrealizedPnLPercent,
           unrealizedPnLPercent: pos.unrealizedPnLPercent,
-          rationale: `El precio actual ($${pos.currentPrice}) rompió a la baja el Stop Loss ($${pos.stopLoss}).`,
           message: `🛑 *¡STOP-LOSS ACTIVADO PARA ${pos.symbol}!* El precio ($${pos.currentPrice}) perforó tu stop ($${pos.stopLoss}). Pérdida: ${pos.unrealizedPnLPercent}%. Ejecuta venta en ${pos.broker} para resguardar capital.`,
         });
       }
     }
 
-    return triggeredAlerts;
+    return triggered;
   }
 }
 

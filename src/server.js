@@ -7,10 +7,12 @@ import { whatsappService } from './services/whatsappService.js';
 import { telegramService } from './services/telegramService.js';
 import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
+import { alpacaService } from './services/alpacaService.js';
+import { capitalManagerService } from './services/capitalManagerService.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
- * Soporta healthcheck, webhooks, endpoints REST de portafolio y triggers cron.
+ * Soporta healthcheck, webhooks, endpoints REST de portafolio, Alpaca y cron.
  */
 
 function readRequestBody(req) {
@@ -33,6 +35,8 @@ const server = http.createServer(async (req, res) => {
       status: 'HEALTHY',
       service: 'invest-ai-engine',
       project: env.GCP_PROJECT_ID,
+      broker: env.BROKER_ENVIRONMENT,
+      capital: capitalManagerService.getCapitalStatus(),
       timestamp: new Date().toISOString(),
     }));
     return;
@@ -121,12 +125,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 8. Consulta en Vivo de Rendimiento del Portafolio (GET /api/portfolio)
+  // 8. Consulta de Estado de Capital y Cero Re-Fondeo (GET /api/capital/status)
+  if (method === 'GET' && url.pathname === '/api/capital/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, capital: capitalManagerService.getCapitalStatus() }));
+    return;
+  }
+
+  // 9. Consulta en Vivo de Rendimiento del Portafolio (GET /api/portfolio)
   if (method === 'GET' && url.pathname === '/api/portfolio') {
     try {
       const performance = await portfolioService.calculatePortfolioPerformance();
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, performance }));
+      res.end(JSON.stringify({ success: true, performance, capital: capitalManagerService.getCapitalStatus() }));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: err.message }));
@@ -134,7 +145,49 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 9. Registro de Nueva Inversión en Portafolio (POST /api/portfolio/buy)
+  // 10. Alpaca REST: Consulta de Cuenta y Balances (GET /api/alpaca/account)
+  if (method === 'GET' && url.pathname === '/api/alpaca/account') {
+    try {
+      const account = await alpacaService.getAccount();
+      capitalManagerService.syncWithAlpacaBalance(account);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, account }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 11. Alpaca REST: Posiciones Abiertas (GET /api/alpaca/positions)
+  if (method === 'GET' && url.pathname === '/api/alpaca/positions') {
+    try {
+      const positions = await alpacaService.getPositions();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, positions }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 12. Alpaca REST: Envío de Orden Bracket Fraccionada (POST /api/alpaca/order)
+  if (method === 'POST' && url.pathname === '/api/alpaca/order') {
+    try {
+      const raw = await readRequestBody(req);
+      const payload = JSON.parse(raw || '{}');
+      const order = await alpacaService.submitBracketOrder(payload);
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, order }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 13. Registro Manual de Inversión (POST /api/portfolio/buy)
   if (method === 'POST' && url.pathname === '/api/portfolio/buy') {
     try {
       const raw = await readRequestBody(req);
@@ -149,7 +202,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 10. Cierre de Posición en Portafolio (POST /api/portfolio/close/:id)
+  // 14. Cierre de Posición en Portafolio (POST /api/portfolio/close/:id)
   if (method === 'POST' && url.pathname.startsWith('/api/portfolio/close/')) {
     const positionId = url.pathname.split('/')[4];
     try {
@@ -166,54 +219,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 11. Disparo Manual Telegram (POST /api/dispatch/telegram/:symbol)
-  if (method === 'POST' && url.pathname.startsWith('/api/dispatch/telegram/')) {
-    const symbol = url.pathname.split('/')[4];
-    const targetChatId = url.searchParams.get('chatId') || env.TELEGRAM_CHAT_ID || 'SIMULATED';
-    try {
-      const signal = await predictionEngine.generateSignal(symbol);
-      const telegramResult = await telegramService.sendSignalAlert(targetChatId, signal);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, channel: 'telegram', signal, telegramResult }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
-  // 12. Disparo Manual Twilio (POST /api/dispatch/twilio/:symbol)
-  if (method === 'POST' && url.pathname.startsWith('/api/dispatch/twilio/')) {
-    const symbol = url.pathname.split('/')[4];
-    const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
-    try {
-      const signal = await predictionEngine.generateSignal(symbol);
-      const twilioResult = await twilioService.sendSignalAlert(targetPhone, signal);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, channel: 'twilio', signal, twilioResult }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
-  // 13. Disparo Manual Meta (POST /api/dispatch/:symbol)
-  if (method === 'POST' && url.pathname.startsWith('/api/dispatch/')) {
-    const symbol = url.pathname.split('/')[3];
-    const targetPhone = url.searchParams.get('to') || env.ADMIN_WHATSAPP_NUMBER || 'SIMULATED';
-    try {
-      const signal = await predictionEngine.generateSignal(symbol);
-      const waResult = await whatsappService.sendSignalInteractiveCard(targetPhone, signal);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, channel: 'meta', signal, waResult }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
   // Ruta 404 por defecto
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Ruta no encontrada' }));
@@ -225,10 +230,8 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
     console.info(`👉 Healthcheck:        http://localhost:${PORT}/health`);
-    console.info(`👉 Portfolio Metrics:  http://localhost:${PORT}/api/portfolio`);
-    console.info(`👉 Webhook Telegram:   http://localhost:${PORT}/webhook/telegram`);
-    console.info(`👉 Webhook Twilio:     http://localhost:${PORT}/webhook/twilio`);
-    console.info(`👉 Webhook Meta:       http://localhost:${PORT}/webhook`);
+    console.info(`👉 Capital Pool ($35): http://localhost:${PORT}/api/capital/status`);
+    console.info(`👉 Alpaca Account:     http://localhost:${PORT}/api/alpaca/account`);
   });
 }
 

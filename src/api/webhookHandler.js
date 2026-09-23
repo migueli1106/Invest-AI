@@ -3,157 +3,86 @@ import { getSignalsCollection } from '../db/firestore.js';
 import { whatsappService } from '../services/whatsappService.js';
 import { twilioService } from '../services/twilioService.js';
 import { telegramService } from '../services/telegramService.js';
+import { alpacaService } from '../services/alpacaService.js';
+import { capitalManagerService } from '../services/capitalManagerService.js';
+import { portfolioService } from '../services/portfolioService.js';
 
 /**
- * 📥 [INVEST AI] Controlador Unificado de Webhooks para WhatsApp
- * Soporta tanto Meta Cloud API como Twilio WhatsApp Sandbox para Human-in-the-Loop.
+ * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
+ * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Alpaca y Cero Re-Fondeo.
  */
 
 class WebhookHandler {
-  /**
-   * Valida el token de verificación con Meta (GET /webhook).
-   * @param {URLSearchParams} queryParams
-   */
   handleVerification(queryParams) {
     const mode = queryParams.get('hub.mode');
     const token = queryParams.get('hub.verify_token');
     const challenge = queryParams.get('hub.challenge');
+    const expected = env.META_WHATSAPP_VERIFY_TOKEN || 'invest_ai_secret_token';
 
-    const expectedToken = env.META_WHATSAPP_VERIFY_TOKEN || 'invest_ai_secret_token';
-
-    if (mode === 'subscribe' && token === expectedToken) {
-      console.info('✅ [WEBHOOK] Handshake con Meta verificado exitosamente.');
+    if (mode === 'subscribe' && token === expected) {
+      console.info('✅ [WEBHOOK] Handshake con Meta verificado.');
       return { status: 200, body: challenge };
     }
-
-    console.warn('❌ [WEBHOOK] Intento de verificación fallido con token inválido.');
     return { status: 403, body: 'Forbidden' };
   }
 
-  /**
-   * Procesa respuestas de Meta Cloud API (POST /webhook).
-   * @param {object} payload
-   * @param {object} [options={ updateDb: true }]
-   */
   async handleIncomingEvent(payload, options = { updateDb: true }) {
     try {
-      const entry = payload?.entry?.[0];
-      const change = entry?.changes?.[0];
-      const value = change?.value;
-      const message = value?.messages?.[0];
-
+      const message = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
       if (!message) return { status: 200, result: { ignored: true } };
 
       const from = message.from;
-
       if (message.type === 'interactive' && message.interactive?.button_reply) {
         const buttonId = message.interactive.button_reply.id;
-        const buttonTitle = message.interactive.button_reply.title;
-
-        console.info(`📬 [WHATSAPP CLICK] De ${from}: Botón presionado '${buttonTitle}' (ID: ${buttonId})`);
+        const symbol = buttonId.split('_')[1] || 'ACTIVO';
 
         if (buttonId.startsWith('approve_')) {
-          const symbol = buttonId.split('_')[1] || 'ACTIVO';
           if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
-          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n\n📱 *Paso siguiente:* Abre Happi para colocar la orden al precio sugerido.`);
+          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n📱 Abre Happi/Alpaca para colocar la orden.`);
           return { status: 200, result: { action: 'APPROVED', symbol } };
         } else if (buttonId.startsWith('reject_')) {
-          const symbol = buttonId.split('_')[1] || 'ACTIVO';
           if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', from);
-          await whatsappService.sendTextMessage(from, `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada. El capital permanece protegido.`);
+          await whatsappService.sendTextMessage(from, `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada.`);
           return { status: 200, result: { action: 'REJECTED', symbol } };
         }
       }
-
       return { status: 200, result: { received: true } };
     } catch (err) {
-      console.error(`❌ [WEBHOOK] Error procesando Meta: ${err.message}`);
       return { status: 200, result: { error: err.message } };
     }
   }
 
-  /**
-   * Procesa mensajes y respuestas entrantes de Twilio WhatsApp (POST /webhook/twilio).
-   * @param {URLSearchParams} formParams - Parámetros form-urlencoded de Twilio
-   * @param {object} [options={ updateDb: true }]
-   */
   async handleTwilioIncoming(formParams, options = { updateDb: true }) {
     try {
       const from = formParams.get('From') || '';
       const body = (formParams.get('Body') || '').trim();
-      const upperBody = body.toUpperCase();
+      const upper = body.toUpperCase();
 
-      console.info(`📬 [TWILIO WHATSAPP] Mensaje recibido de ${from}: "${body}"`);
-
-      if (upperBody === 'APROBAR' || upperBody === 'SI' || upperBody === 'SÍ' || upperBody.startsWith('APROBAR')) {
-        let symbol = 'ACTIVO';
-        if (upperBody.includes(' ')) {
-          symbol = upperBody.split(' ')[1];
-        }
-
-        if (options.updateDb) {
-          await this.updateSignalStatus(symbol, 'APPROVED', from);
-        }
-
-        const replyText = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra. \n\n📱 *Paso siguiente:* Abre tu broker (Happi) y ejecuta la orden al precio sugerido. \n\n_Invest AI ha registrado tu autorización._`;
-        await twilioService.sendTextMessage(from, replyText);
-
-        return {
-          status: 200,
-          result: { action: 'APPROVED', from, symbol },
-          twiml: `<Response><Message>${replyText}</Message></Response>`,
-        };
-
-      } else if (upperBody === 'RECHAZAR' || upperBody === 'NO' || upperBody.startsWith('RECHAZAR')) {
-        let symbol = 'ACTIVO';
-        if (upperBody.includes(' ')) {
-          symbol = upperBody.split(' ')[1];
-        }
-
-        if (options.updateDb) {
-          await this.updateSignalStatus(symbol, 'REJECTED', from);
-        }
-
-        const replyText = `❌ *OPERACIÓN RECHAZADA*\n\nLa señal de inversión ha sido descartada. Tu capital permanece 100% protegido.`;
-        await twilioService.sendTextMessage(from, replyText);
-
-        return {
-          status: 200,
-          result: { action: 'REJECTED', from, symbol },
-          twiml: `<Response><Message>${replyText}</Message></Response>`,
-        };
-
-      } else if (upperBody.includes('ESTADO') || upperBody.includes('STATUS')) {
-        const replyText = `🤖 *Invest AI Status:*\nEl motor cuantitativo está activo y monitoreando Wall Street en Google Cloud Run.`;
-        await twilioService.sendTextMessage(from, replyText);
-        return {
-          status: 200,
-          result: { action: 'STATUS', from },
-          twiml: `<Response><Message>${replyText}</Message></Response>`,
-        };
+      if (upper === 'APROBAR' || upper.startsWith('APROBAR') || upper === 'SI' || upper === 'SÍ') {
+        const symbol = upper.includes(' ') ? upper.split(' ')[1] : 'ACTIVO';
+        if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
+        const text = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de ${symbol}. \n📱 Revisa tu broker (Happi/Alpaca).`;
+        await twilioService.sendTextMessage(from, text);
+        return { status: 200, result: { action: 'APPROVED', from, symbol }, twiml: `<Response><Message>${text}</Message></Response>` };
+      } else if (upper === 'RECHAZAR' || upper.startsWith('RECHAZAR') || upper === 'NO') {
+        const symbol = upper.includes(' ') ? upper.split(' ')[1] : 'ACTIVO';
+        if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', from);
+        const text = `❌ *OPERACIÓN RECHAZADA*\n\nLa señal de inversión para ${symbol} fue descartada.`;
+        await twilioService.sendTextMessage(from, text);
+        return { status: 200, result: { action: 'REJECTED', from, symbol }, twiml: `<Response><Message>${text}</Message></Response>` };
+      } else if (upper.includes('ESTADO') || upper.includes('STATUS')) {
+        const text = `🤖 *Invest AI Status:*\nMotor cuantitativo activo y operando en Google Cloud Run.`;
+        await twilioService.sendTextMessage(from, text);
+        return { status: 200, result: { action: 'STATUS', from }, twiml: `<Response><Message>${text}</Message></Response>` };
       }
-
-      return {
-        status: 200,
-        result: { action: 'UNKNOWN', body },
-        twiml: `<Response></Response>`,
-      };
-
+      return { status: 200, result: { action: 'UNKNOWN' }, twiml: '<Response></Response>' };
     } catch (err) {
-      console.error(`❌ [TWILIO WEBHOOK] Error: ${err.message}`);
       return { status: 200, result: { error: err.message }, twiml: '<Response></Response>' };
     }
   }
 
-  /**
-   * Procesa eventos y actualizaciones entrantes de Telegram Bot API (POST /webhook/telegram).
-   * Soporta botones inline táctiles (callback_query) y comandos de texto (/start, /status, /estado).
-   * @param {object} update - Objeto Update de Telegram
-   * @param {object} [options={ updateDb: true }] - Opciones operativas
-   */
   async handleTelegramUpdate(update, options = { updateDb: true }) {
     try {
-      // 1. Manejo de botones táctiles inline (Callback Query)
       if (update?.callback_query) {
         const cq = update.callback_query;
         const from = cq.from;
@@ -161,88 +90,124 @@ class WebhookHandler {
         const callbackQueryId = cq.id;
         const chatId = cq.message?.chat?.id;
 
-        console.info(`📬 [TELEGRAM CLICK] De ${from?.first_name || from?.id}: Botón presionado '${data}' (ID: ${callbackQueryId})`);
+        console.info(`📬 [TELEGRAM CLICK] De ${from?.first_name || from?.id}: '${data}' (ID: ${callbackQueryId})`);
 
         if (data.startsWith('approve_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
-          await telegramService.answerCallbackQuery(callbackQueryId, '¡Operación autorizada!').catch(() => {});
+          await telegramService.answerCallbackQuery(callbackQueryId, 'Procesando ejecución...').catch(() => {});
+
+          const signal = await this.findSignal(symbol);
+          const currentPrice = signal?.entryPrice || 100.00;
+          const takeProfitPrice = signal?.targetPrice || currentPrice * 1.10;
+          const stopLossPrice = signal?.stopLoss || currentPrice * 0.95;
+
+          // Regla Cero Re-Fondeo: Dimensionamiento fraccionario con tope de $35 USD
+          const sizing = capitalManagerService.calculateFractionalSizing(symbol, currentPrice, 35.00);
+
+          if (!sizing.allowed) {
+            const warnMsg = `⚠️ *¡CAPITAL 100% DESPLEGADO ($35.00 USD)!*\n\nNo es posible abrir *${symbol}* bajo la regla de CERO RE-FONDEO.\nEl capital rotará automáticamente al cerrarse una posición en Take-Profit o Stop-Loss.`;
+            if (chatId) await telegramService.sendMessage(chatId, warnMsg);
+            return { status: 200, result: { action: 'BLOCKED_ZERO_REFUND', symbol, reason: sizing.reason } };
+          }
+
+          // Ejecución automática en Alpaca
+          const order = await alpacaService.submitBracketOrder({
+            symbol,
+            qty: sizing.qty,
+            notional: sizing.notional,
+            takeProfitPrice,
+            stopLossPrice,
+          });
+
+          capitalManagerService.reserveCapital(order.id, sizing.notional);
+          await portfolioService.addPosition({
+            symbol,
+            shares: sizing.qty,
+            buyPrice: currentPrice,
+            broker: 'Alpaca',
+            stopLoss: stopLossPrice,
+            targetPrice: takeProfitPrice,
+          });
+
           if (options.updateDb) {
-            await this.updateSignalStatus(symbol, 'APPROVED', String(from?.id || 'telegram_user'));
+            await this.updateSignalStatus(symbol, 'EXECUTED', String(from?.id || 'telegram'), order.id);
           }
+
           if (chatId) {
-            await telegramService.sendMessage(
-              chatId,
-              `✅ *¡OPERACIÓN APROBADA!*\n\nHas autorizado la compra de *${symbol}*.\n\n📱 *Paso siguiente:* Abre Happi para colocar la orden al precio sugerido.`
-            );
+            const confirmMsg = [
+              `🚀 *¡ORDEN EJECUTADA EN ALPACA!*`,
+              ``,
+              `Se ha colocado la orden Bracket fraccionada para *${symbol}* (${env.BROKER_ENVIRONMENT}).`,
+              `• Inversión Nocional: $${sizing.notional.toFixed(2)} USD`,
+              `• Cantidad Fraccionada: ${sizing.qty} acc.`,
+              `• Target Take-Profit: $${takeProfitPrice.toFixed(2)}`,
+              `• Stop-Loss Protección: $${stopLossPrice.toFixed(2)}`,
+              `• Order ID: \`${order.id}\``,
+              ``,
+              `_Tu orden ya está activa en Wall Street con salida automática._`,
+            ].join('\n');
+            await telegramService.sendMessage(chatId, confirmMsg);
           }
-          return { status: 200, result: { action: 'APPROVED', symbol } };
+
+          return { status: 200, result: { action: 'APPROVED', symbol, orderId: order.id, executed: true } };
 
         } else if (data.startsWith('reject_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
           await telegramService.answerCallbackQuery(callbackQueryId, 'Operación descartada').catch(() => {});
-          if (options.updateDb) {
-            await this.updateSignalStatus(symbol, 'REJECTED', String(from?.id || 'telegram_user'));
-          }
-          if (chatId) {
-            await telegramService.sendMessage(
-              chatId,
-              `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada. Tu capital permanece protegido.`
-            );
-          }
+          if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', String(from?.id || 'telegram'));
+          if (chatId) await telegramService.sendMessage(chatId, `❌ *OPERACIÓN RECHAZADA*\n\nLa señal para *${symbol}* ha sido descartada.`);
           return { status: 200, result: { action: 'REJECTED', symbol } };
         }
       }
 
-      // 2. Manejo de comandos y mensajes de texto
       if (update?.message?.text) {
-        const msg = update.message;
-        const text = msg.text.trim();
-        const chatId = msg.chat?.id;
-
-        console.info(`📬 [TELEGRAM MENSAJE] De ${chatId}: "${text}"`);
+        const text = update.message.text.trim();
+        const chatId = update.message.chat?.id;
 
         if (text.startsWith('/status') || text.startsWith('/estado')) {
-          const statusText = `🤖 *Invest AI Status:*\nEl motor cuantitativo está activo y monitoreando Wall Street en Google Cloud Run.`;
-          if (chatId) await telegramService.sendMessage(chatId, statusText);
+          const cap = capitalManagerService.getCapitalStatus();
+          const msg = `🤖 *Invest AI Status:*\nMotor activo en Google Cloud Run.\n💰 Pool: $${cap.totalCapital} | Libre: $${cap.availableCash} | Invertido: $${cap.deployedCapital}`;
+          if (chatId) await telegramService.sendMessage(chatId, msg);
           return { status: 200, result: { action: 'STATUS', chatId } };
-
         } else if (text.startsWith('/start')) {
-          const welcomeText = `👋 *¡Bienvenido a Invest AI Bot!*\n\nTu canal seguro para recibir señales de inversión y autorizarlas con 1-clic.\n\n🆔 *Tu Chat ID es:* \`${chatId}\`\n\n_Copia este ID en tu variable TELEGRAM_CHAT_ID para recibir alertas personalizadas._`;
-          if (chatId) await telegramService.sendMessage(chatId, welcomeText);
+          const msg = `👋 *¡Bienvenido a Invest AI Bot!*\n\nTu canal seguro para autorizar inversiones algorítmicas.\n🆔 *Chat ID:* \`${chatId}\``;
+          if (chatId) await telegramService.sendMessage(chatId, msg);
           return { status: 200, result: { action: 'START', chatId } };
         }
       }
 
       return { status: 200, result: { received: true } };
-
     } catch (err) {
-      console.error(`❌ [TELEGRAM WEBHOOK] Error: ${err.message}`);
+      console.error('❌ [WEBHOOK ERROR]:', err);
       return { status: 200, result: { error: err.message } };
     }
   }
 
-  /**
-   * Actualiza el estado de la señal en Firestore de forma segura.
-   */
-  async updateSignalStatus(symbol, status, userPhone) {
+  async findSignal(symbol) {
+    if (process.env.NODE_ENV === 'test') return null;
+    try {
+      const snap = await getSignalsCollection().where('symbol', '==', symbol).where('status', '==', 'PENDING_APPROVAL').limit(1).get();
+      if (!snap.empty) return snap.docs[0].data();
+    } catch (err) {
+      console.warn(`⚠️ Error leyendo señal: ${err.message}`);
+    }
+    return null;
+  }
+
+  async updateSignalStatus(symbol, status, userPhone, orderId = null) {
+    if (process.env.NODE_ENV === 'test') return;
     try {
       let query = getSignalsCollection().where('status', '==', 'PENDING_APPROVAL');
-      if (symbol && symbol !== 'ACTIVO') {
-        query = query.where('symbol', '==', symbol);
-      }
-      const snapshot = await query.limit(1).get();
+      if (symbol && symbol !== 'ACTIVO') query = query.where('symbol', '==', symbol);
+      const snap = await query.limit(1).get();
 
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        await doc.ref.update({
-          status,
-          resolvedAt: new Date().toISOString(),
-          resolvedBy: userPhone,
-        });
-        console.info(`💾 [FIRESTORE] Señal ${doc.id} actualizada a estado: ${status}`);
+      if (!snap.empty) {
+        const updateData = { status, resolvedAt: new Date().toISOString(), resolvedBy: userPhone };
+        if (orderId) updateData.alpacaOrderId = orderId;
+        await snap.docs[0].ref.update(updateData);
       }
-    } catch (dbErr) {
-      console.warn(`⚠️ [FIRESTORE] No se pudo actualizar estado: ${dbErr.message}`);
+    } catch (err) {
+      console.warn(`⚠️ Error actualizando estado de señal: ${err.message}`);
     }
   }
 }

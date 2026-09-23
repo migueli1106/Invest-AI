@@ -10,7 +10,7 @@
     "list": "node src/index.js --list",
     "signals": "node src/index.js --signals",
     "test:security": "node --test tests/security/zero-trust.test.js",
-    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js tests/unit/twilio.test.js tests/unit/telegram.test.js tests/unit/portfolio.test.js tests/unit/scheduler.test.js",
+    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js tests/unit/twilio.test.js tests/unit/telegram.test.js tests/unit/portfolio.test.js tests/unit/scheduler.test.js tests/unit/capitalManager.test.js tests/unit/alpaca.test.js",
     "audit:secrets": "node scripts/audit-secrets.js",
     "audit:monoliths": "node scripts/audit-monoliths.js",
     "audit:deploy": "node scripts/audit-deployment.js",
