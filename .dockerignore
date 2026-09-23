@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules
+npm-debug.log
+.env*
+!.env.example
+tests
+scripts
+scratch
+.system_generated
+*.md
+Dockerfile
+.dockerignore
