@@ -165,10 +165,10 @@ class WebhookHandler {
 
         if (data.startsWith('approve_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
+          await telegramService.answerCallbackQuery(callbackQueryId, '¡Operación autorizada!').catch(() => {});
           if (options.updateDb) {
             await this.updateSignalStatus(symbol, 'APPROVED', String(from?.id || 'telegram_user'));
           }
-          await telegramService.answerCallbackQuery(callbackQueryId, '¡Operación autorizada!');
           if (chatId) {
             await telegramService.sendMessage(
               chatId,
@@ -179,10 +179,10 @@ class WebhookHandler {
 
         } else if (data.startsWith('reject_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
+          await telegramService.answerCallbackQuery(callbackQueryId, 'Operación descartada').catch(() => {});
           if (options.updateDb) {
             await this.updateSignalStatus(symbol, 'REJECTED', String(from?.id || 'telegram_user'));
           }
-          await telegramService.answerCallbackQuery(callbackQueryId, 'Operación descartada');
           if (chatId) {
             await telegramService.sendMessage(
               chatId,

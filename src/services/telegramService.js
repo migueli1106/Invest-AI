@@ -152,7 +152,8 @@ class TelegramService {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(`Error en answerCallbackQuery (${response.status}): ${JSON.stringify(errData)}`);
+      console.warn(`⚠️ [TELEGRAM] Callback query no pudo responderse: ${errData.description || response.statusText}`);
+      return { ok: false, error: errData };
     }
 
     return await response.json();
