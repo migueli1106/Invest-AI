@@ -36,6 +36,9 @@ const EnvironmentSchema = z.object({
   META_WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
   META_WHATSAPP_VERIFY_TOKEN: z.string().default('invest_ai_secret_token'),
 
+  // Cloud Scheduler & Automatización Segura
+  CRON_SECRET: z.string().default('invest_ai_cron_internal_secret'),
+
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

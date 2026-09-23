@@ -36,7 +36,8 @@ if (fs.existsSync(envExamplePath)) {
     'GCP_PROJECT_ID',
     'FIREBASE_PROJECT_ID',
     'FIRESTORE_DATABASE_ID',
-    'GCS_BUCKET_NAME'
+    'GCS_BUCKET_NAME',
+    'CRON_SECRET'
   ];
 
   for (const envVar of requiredEnvVars) {
@@ -56,6 +57,14 @@ const REQUIRED_COLLECTIONS = [
 
 console.info('📁 Colecciones Firebase Firestore objetivo:');
 REQUIRED_COLLECTIONS.forEach(col => console.info(`  • ${col}`));
+
+// 4. Verificación de Arquitectura Cloud Scheduler
+const schedulerScriptPath = path.join(rootDir, 'scripts', 'setup-cloud-scheduler.js');
+if (!fs.existsSync(schedulerScriptPath)) {
+  errors.push("No se encontró el aprovisionador de Cloud Scheduler 'scripts/setup-cloud-scheduler.js'.");
+} else {
+  console.info('⏰ Aprovisionador de Google Cloud Scheduler verificado.');
+}
 
 // 4. Reporte
 if (errors.length > 0) {

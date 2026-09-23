@@ -116,6 +116,28 @@ async function main() {
       })));
     }
 
+  } else if (command === '--scheduler-status') {
+    console.info('⏰ Consultando estado de Cloud Scheduler...');
+    const { execSync } = await import('child_process');
+    try {
+      const output = execSync('node scripts/setup-cloud-scheduler.js --status', { encoding: 'utf-8' });
+      console.info(output);
+    } catch (err) {
+      console.error(`❌ Error consultando Cloud Scheduler: ${err.message}`);
+    }
+
+  } else if (command === '--scheduler-trigger') {
+    const target = args[1] || 'portfolio';
+    const jobName = target === 'scanner' ? 'invest-ai-market-scanner' : 'invest-ai-portfolio-guard';
+    console.info(`⚡ Disparando Cloud Scheduler job [${jobName}]...`);
+    const { execSync } = await import('child_process');
+    try {
+      const output = execSync(`node scripts/setup-cloud-scheduler.js --run ${jobName}`, { encoding: 'utf-8' });
+      console.info(output);
+    } catch (err) {
+      console.error(`❌ Error ejecutando Cloud Scheduler job: ${err.message}`);
+    }
+
   } else if (command === '--cron-scan') {
     console.info('🔄 Ejecutando escaneo autónomo programado...');
     const result = await schedulerService.runAutonomousMarketScan(undefined, true);

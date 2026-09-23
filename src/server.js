@@ -24,6 +24,12 @@ function readRequestBody(req) {
   });
 }
 
+function isCronAuthorized(req) {
+  const cronSecret = req.headers['x-cron-secret'];
+  const isCloudScheduler = req.headers['x-cloudscheduler'] === 'true';
+  return isCloudScheduler || (Boolean(cronSecret) && cronSecret === env.CRON_SECRET);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const method = req.method;
@@ -97,6 +103,11 @@ const server = http.createServer(async (req, res) => {
 
   // 6. Cloud Scheduler Cron: Escaneo Autónomo (POST /api/cron/scan)
   if (method === 'POST' && url.pathname === '/api/cron/scan') {
+    if (!isCronAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing cron secret' }));
+      return;
+    }
     try {
       const raw = await readRequestBody(req);
       const payload = raw ? JSON.parse(raw) : {};
@@ -114,6 +125,11 @@ const server = http.createServer(async (req, res) => {
 
   // 7. Cloud Scheduler Cron: Auditoría de Portafolio y Alertas de Salida (POST /api/cron/portfolio)
   if (method === 'POST' && url.pathname === '/api/cron/portfolio') {
+    if (!isCronAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing cron secret' }));
+      return;
+    }
     try {
       const result = await schedulerService.runPortfolioHealthCheck();
       res.writeHead(200, { 'Content-Type': 'application/json' });
