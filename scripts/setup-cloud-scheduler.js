@@ -68,7 +68,7 @@ function upsertJob(job) {
 
   if (exists) {
     console.info(`🔄 Actualizando trabajo existente [${name}]...`);
-    const updateCmd = `gcloud scheduler jobs update http ${name} --location=${REGION} --project=${PROJECT_ID} --schedule="${schedule}" --time-zone="America/New_York" --uri="${uri}" --http-method=POST --headers=${headers} --message-body=${messageBody} --description="${description}" --quiet`;
+    const updateCmd = `gcloud scheduler jobs update http ${name} --location=${REGION} --project=${PROJECT_ID} --schedule="${schedule}" --time-zone="America/New_York" --uri="${uri}" --http-method=POST --update-headers=${headers} --message-body=${messageBody} --description="${description}" --quiet`;
     runGcloud(updateCmd);
     console.info(`✅ [${name}] actualizado.`);
   } else {
