@@ -158,6 +158,43 @@ class TelegramService {
 
     return await response.json();
   }
+
+  /**
+   * Envía un resumen ejecutivo del portafolio y telemetría a Telegram.
+   * @param {string|number} [chatId] - ID de chat destino
+   * @param {object} report - Objeto de reporte generado por ReportingService
+   * @param {object} [gcsMeta] - Metadatos opcionales de archivado en GCS
+   */
+  async sendPortfolioReport(chatId, report, gcsMeta = null) {
+    const targetChatId = chatId || env.TELEGRAM_CHAT_ID;
+    const { capital, metrics, openPositions } = report;
+
+    const gcsRef = gcsMeta && gcsMeta.publicOrGcsUri ? gcsMeta.publicOrGcsUri : `gs://${env.GCS_BUCKET_NAME || 'invest_ia'}/reports/report_${report.date}.json`;
+
+    const messageLines = [
+      `📊 *INVEST AI — RESUMEN EJECUTIVO DE RENDIMIENTO*`,
+      `📅 *Fecha:* ${report.date} | *ID:* \`${report.reportId}\``,
+      ``,
+      `💰 *Pool de Capital (Cero Re-Fondeo):*`,
+      `• Total Autorizado: *$${capital.totalCapital.toFixed(2)} ${capital.currency}*`,
+      `• Disponible Libre: *$${capital.availableCash.toFixed(2)} ${capital.currency}*`,
+      `• En Mercado: *$${capital.deployedCapital.toFixed(2)} ${capital.currency}*`,
+      `• Estado: ${capital.canTrade ? '🟢 Habilitado' : '🔴 Rotando'}`,
+      ``,
+      `📈 *Rendimiento Cuantitativo:*`,
+      `• P&L Realizado: *${metrics.realizedPnLTotal >= 0 ? '+' : ''}$${metrics.realizedPnLTotal.toFixed(2)}*`,
+      `• P&L Flotante: *${metrics.unrealizedPnLTotal >= 0 ? '+' : ''}$${metrics.unrealizedPnLTotal.toFixed(2)} (${metrics.unrealizedPnLPercent >= 0 ? '+' : ''}${metrics.unrealizedPnLPercent}%)*`,
+      `• Win Rate: *${metrics.winRatePercent}%* (${metrics.winningTradesCount}/${metrics.totalClosedTrades} cerradas)`,
+      `• Profit Factor: *${metrics.profitFactor === 999.99 ? '∞' : metrics.profitFactor.toFixed(2)}*`,
+      ``,
+      `💼 *Posiciones Abiertas:* ${openPositions.count}`,
+      `🗄️ *Archivado Inmutable:* \`${gcsRef}\``,
+    ];
+
+    return await this.sendMessage(targetChatId, messageLines.join('\n'), {
+      parse_mode: 'Markdown',
+    });
+  }
 }
 
 export const telegramService = new TelegramService();

@@ -9,6 +9,7 @@ import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
 import { alpacaService } from './services/alpacaService.js';
 import { capitalManagerService } from './services/capitalManagerService.js';
+import { reportingService } from './services/reportingService.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
@@ -235,14 +236,57 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 15. Generación y Archivador de Reportes Inmutables (POST /api/reports/generate)
+  if (method === 'POST' && url.pathname === '/api/reports/generate') {
+    if (!isCronAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing cron secret' }));
+      return;
+    }
+    try {
+      const raw = await readRequestBody(req);
+      const payload = raw ? JSON.parse(raw) : {};
+      const uploadGCS = payload.uploadGCS !== false;
+      const notify = payload.notify === true;
+
+      const result = await reportingService.generateAndArchiveReport({ uploadGCS });
+      let telegramResult = null;
+
+      if (notify) {
+        telegramResult = await telegramService.sendPortfolioReport(undefined, result.report, result.jsonMeta);
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, ...result, telegram: telegramResult }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 16. Consulta de Último Reporte Financiero (GET /api/reports/latest)
+  if (method === 'GET' && url.pathname === '/api/reports/latest') {
+    try {
+      const report = await reportingService.generateReportJson();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, report }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
   // Ruta 404 por defecto
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Ruta no encontrada' }));
 });
 
 const PORT = env.PORT || 8080;
+const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.NODE_TEST_CONTEXT) || process.argv.some((a) => a.includes('--test'));
 
-if (process.env.NODE_ENV !== 'test') {
+if (!isTestEnv) {
   server.listen(PORT, () => {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
     console.info(`👉 Healthcheck:        http://localhost:${PORT}/health`);

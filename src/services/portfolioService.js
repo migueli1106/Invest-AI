@@ -96,6 +96,26 @@ class PortfolioService {
   }
 
   /**
+   * Obtiene todas las posiciones históricas cerradas.
+   */
+  async getClosedPositions() {
+    if (this.isTest()) {
+      return this.localPositions.filter((p) => p.status === 'CLOSED');
+    }
+
+    try {
+      const snapshot = await getPortfolioCollection().where('status', '==', 'CLOSED').get();
+      if (!snapshot.empty) {
+        return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      }
+      return this.localPositions.filter((p) => p.status === 'CLOSED');
+    } catch (err) {
+      console.warn(`⚠️ [FIRESTORE] Lectura de posiciones cerradas simulada: ${err.message}`);
+      return this.localPositions.filter((p) => p.status === 'CLOSED');
+    }
+  }
+
+  /**
    * Cierra una posición abierta, registra precio de salida y rota el capital devuelto.
    */
   async closePosition(positionId, closePrice) {

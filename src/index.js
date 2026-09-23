@@ -6,6 +6,7 @@ import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
 import { alpacaService } from './services/alpacaService.js';
 import { capitalManagerService } from './services/capitalManagerService.js';
+import { reportingService } from './services/reportingService.js';
 
 /**
  * 🚀 [INVEST AI] Orquestador de Operaciones CLI y Cloud Run
@@ -137,6 +138,24 @@ async function main() {
     } catch (err) {
       console.error(`❌ Error ejecutando Cloud Scheduler job: ${err.message}`);
     }
+
+  } else if (command === '--report') {
+    console.info('📊 Generando reporte ejecutivo financiero...');
+    const report = await reportingService.generateReportJson();
+    const md = reportingService.generateReportMarkdown(report);
+    console.info('\n' + md);
+
+  } else if (command === '--report-upload') {
+    console.info('☁️ Generando y archivando reporte inmutable en Google Cloud Storage (gs://invest_ia/)...');
+    const result = await reportingService.generateAndArchiveReport({ uploadGCS: true });
+    console.info(`✅ Reporte JSON archivado: ${result.jsonMeta.publicOrGcsUri}`);
+    console.info(`✅ Reporte Markdown archivado: ${result.mdMeta.publicOrGcsUri}`);
+
+  } else if (command === '--report-notify') {
+    console.info('📢 Generando reporte y despachando tarjeta ejecutiva a Telegram...');
+    const result = await reportingService.generateAndArchiveReport({ uploadGCS: true });
+    await telegramService.sendPortfolioReport(undefined, result.report, result.jsonMeta);
+    console.info('✅ Reporte enviado a Telegram exitosamente.');
 
   } else if (command === '--cron-scan') {
     console.info('🔄 Ejecutando escaneo autónomo programado...');
