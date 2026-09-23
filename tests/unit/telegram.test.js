@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { telegramService } from '../../src/services/telegramService.js';
