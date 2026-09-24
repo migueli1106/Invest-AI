@@ -62,14 +62,14 @@ describe('💰 Suite de Pruebas Unitarias: Gestor de Capital y Regla CERO RE-FON
     assert.equal(nextTrade.notional, 35.00);
   });
 
-  it('syncWithAlpacaBalance debe calibrar el pool con los balances reales del broker', () => {
-    const mockAlpacaAccount = {
+  it('syncWithBrokerBalance debe calibrar el pool con los balances reales del broker', () => {
+    const mockBrokerAccount = {
       cash: '34.80',
       portfolio_value: '34.80',
       buying_power: '69.60',
     };
 
-    capitalManagerService.syncWithAlpacaBalance(mockAlpacaAccount);
+    capitalManagerService.syncWithBrokerBalance(mockBrokerAccount);
     const status = capitalManagerService.getCapitalStatus();
     assert.equal(status.availableCash, 34.80);
     assert.equal(status.totalCapital, 34.80);

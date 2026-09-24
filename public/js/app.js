@@ -95,7 +95,7 @@ function updatePositionsTable(positions) {
     const pnlPercent = Number(p.unrealizedPnLPercent || 0);
     const isPos = pnl >= 0;
     const sign = isPos ? '+' : '';
-    const brokerClass = (p.broker || '').toLowerCase() === 'alpaca' ? 'broker-alpaca' : '';
+    const brokerClass = (p.broker || '').toLowerCase() === 'happi' ? 'broker-happi' : '';
 
     return `
       <tr>
@@ -150,7 +150,8 @@ async function fetchTelemetry() {
       document.getElementById('telem-profit-factor').textContent = rep.metrics.profitFactor === 999.99 ? '∞ (Sin pérdidas)' : rep.metrics.profitFactor.toFixed(2);
       document.getElementById('telem-realized-pnl').textContent = formatUSD(rep.metrics.realizedPnLTotal);
       document.getElementById('telem-buying-power').textContent = formatUSD(rep.broker.buyingPower);
-      document.getElementById('telem-alpaca-cash').textContent = formatUSD(rep.broker.cash);
+      const cashEl = document.getElementById('telem-broker-cash');
+      if (cashEl) cashEl.textContent = formatUSD(rep.broker.cash);
 
       // 3. Positions Table
       updatePositionsTable(rep.openPositions.items || []);

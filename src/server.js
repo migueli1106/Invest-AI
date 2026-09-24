@@ -9,13 +9,12 @@ import { whatsappService } from './services/whatsappService.js';
 import { telegramService } from './services/telegramService.js';
 import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
-import { alpacaService } from './services/alpacaService.js';
 import { capitalManagerService } from './services/capitalManagerService.js';
 import { reportingService } from './services/reportingService.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
- * Soporta healthcheck, webhooks, endpoints REST de portafolio, Alpaca y cron.
+ * Soporta healthcheck, webhooks, endpoints REST de portafolio, broker co-piloto y cron.
  */
 
 const MIME_TYPES = {
@@ -204,49 +203,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 10. Alpaca REST: Consulta de Cuenta y Balances (GET /api/alpaca/account)
-  if (method === 'GET' && url.pathname === '/api/alpaca/account') {
-    try {
-      const account = await alpacaService.getAccount();
-      capitalManagerService.syncWithAlpacaBalance(account);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, account }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
-  // 11. Alpaca REST: Posiciones Abiertas (GET /api/alpaca/positions)
-  if (method === 'GET' && url.pathname === '/api/alpaca/positions') {
-    try {
-      const positions = await alpacaService.getPositions();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, positions }));
-    } catch (err) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
-  // 12. Alpaca REST: Envío de Orden Bracket Fraccionada (POST /api/alpaca/order)
-  if (method === 'POST' && url.pathname === '/api/alpaca/order') {
-    try {
-      const raw = await readRequestBody(req);
-      const payload = JSON.parse(raw || '{}');
-      const order = await alpacaService.submitBracketOrder(payload);
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, order }));
-    } catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: err.message }));
-    }
-    return;
-  }
-
-  // 13. Registro Manual de Inversión (POST /api/portfolio/buy)
+  // 10. Registro Manual de Inversión (POST /api/portfolio/buy)
   if (method === 'POST' && url.pathname === '/api/portfolio/buy') {
     try {
       const raw = await readRequestBody(req);
@@ -333,7 +290,7 @@ if (!isTestEnv) {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
     console.info(`👉 Healthcheck:        http://localhost:${PORT}/health`);
     console.info(`👉 Capital Pool ($35): http://localhost:${PORT}/api/capital/status`);
-    console.info(`👉 Alpaca Account:     http://localhost:${PORT}/api/alpaca/account`);
+    console.info(`👉 Broker Co-Piloto:   Happi (Asistido / Zero-Trust)`);
   });
 }
 

@@ -17,10 +17,7 @@ const EnvironmentSchema = z.object({
   GCS_BUCKET_NAME: z.string().default('invest_ia'),
   GCS_REPORTS_PREFIX: z.string().default('reports/'),
   GCS_MEDIA_PREFIX: z.string().default('media/'),
-  BROKER_ENVIRONMENT: z.enum(['paper', 'live']).default('paper'),
-  ALPACA_API_KEY: z.string().optional(),
-  ALPACA_API_SECRET: z.string().optional(),
-  ALPACA_BASE_URL: z.string().default('https://paper-api.alpaca.markets'),
+  PRIMARY_BROKER: z.string().default('Happi'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
 

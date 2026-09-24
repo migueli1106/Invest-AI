@@ -118,10 +118,10 @@ class CapitalManagerService {
   }
 
   /**
-   * Sincroniza el gestor de capital con los balances reales de Alpaca.
-   * @param {object} account - Respuesta de getAccount() de Alpaca
+   * Sincroniza el gestor de capital con los balances reales del broker (Happi/Manual).
+   * @param {object} account
    */
-  syncWithAlpacaBalance(account) {
+  syncWithBrokerBalance(account) {
     if (!account || account.cash === undefined) return;
 
     const realCash = parseFloat(Number(account.cash).toFixed(2));
@@ -131,7 +131,7 @@ class CapitalManagerService {
     this.totalCapital = realPortfolioValue;
     this.deployedCapital = parseFloat(Math.max(0, this.totalCapital - this.availableCash).toFixed(2));
 
-    console.info(`💼 [CAPITAL SYNC] Sincronizado con Alpaca: Total $${this.totalCapital} | Efectivo $${this.availableCash} | Desplegado $${this.deployedCapital}`);
+    console.info(`💼 [CAPITAL SYNC] Sincronizado con Broker: Total $${this.totalCapital} | Efectivo $${this.availableCash} | Desplegado $${this.deployedCapital}`);
   }
 
   /**

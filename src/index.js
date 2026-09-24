@@ -4,13 +4,12 @@ import { twilioService } from './services/twilioService.js';
 import { telegramService } from './services/telegramService.js';
 import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
-import { alpacaService } from './services/alpacaService.js';
 import { capitalManagerService } from './services/capitalManagerService.js';
 import { reportingService } from './services/reportingService.js';
 
 /**
  * 🚀 [INVEST AI] Orquestador de Operaciones CLI y Cloud Run
- * Gestiona ingesta, monitoreo en vivo, Alpaca, gestor de capital y portafolio.
+ * Gestiona ingesta, monitoreo en vivo, gestor de capital y portafolio.
  */
 
 process.on('unhandledRejection', (reason) => {
@@ -58,38 +57,15 @@ async function main() {
       'Política': status.policy,
     }]);
 
-  } else if (command === '--alpaca-account') {
-    console.info('🦙 Consultando cuenta y balances en Alpaca...');
-    const acc = await alpacaService.getAccount();
+  } else if (command === '--broker-status') {
+    console.info('🏦 Consultando estado del Broker Co-Piloto (Happi)...');
+    const status = capitalManagerService.getCapitalStatus();
     console.table([{
-      ID: acc.id,
-      Estado: acc.status,
-      Moneda: acc.currency,
-      Efectivo: `$${acc.cash}`,
-      'Valor Cartera': `$${acc.portfolio_value}`,
-      'Poder Compra': `$${acc.buying_power}`,
+      Broker: 'Happi (Co-Piloto Asistido)',
+      'Efectivo Disponible': `$${status.availableCash.toFixed(2)} USD`,
+      'Capital Desplegado': `$${status.deployedCapital.toFixed(2)} USD`,
+      'Modo': 'Zero-Trust / Cloud Run Guard',
     }]);
-
-  } else if (command === '--alpaca-positions') {
-    console.info('🦙 Consultando posiciones abiertas en Alpaca...');
-    const positions = await alpacaService.getPositions();
-    if (positions.length === 0) {
-      console.info('ℹ️ No hay posiciones abiertas en Alpaca.');
-    } else {
-      console.table(positions.map((p) => ({
-        Símbolo: p.symbol,
-        Acciones: p.qty,
-        'Precio Entrada': `$${p.avg_entry_price}`,
-        'Precio Actual': `$${p.current_price}`,
-        'Valor Mercado': `$${p.market_value}`,
-        'P&L ($)': `$${p.unrealized_pl}`,
-      })));
-    }
-
-  } else if (command === '--alpaca-sync') {
-    console.info('🔄 Sincronizando posiciones de Alpaca con Firestore y Gestor de Capital...');
-    const result = await portfolioService.syncWithAlpaca();
-    console.info(`✅ Sincronización completada: ${result.syncedCount} posiciones consolidadas.`);
 
   } else if (command === '--portfolio') {
     console.info('💼 [INVEST AI] Calculando rendimiento y valoración en vivo...');

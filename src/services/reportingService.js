@@ -1,6 +1,5 @@
 import { capitalManagerService } from './capitalManagerService.js';
 import { portfolioService } from './portfolioService.js';
-import { alpacaService } from './alpacaService.js';
 import { gcsStorageService } from '../storage/gcsStorageService.js';
 
 /**
@@ -20,7 +19,6 @@ export class ReportingService {
     const capitalStatus = capitalManagerService.getCapitalStatus();
     const portfolioPerformance = await portfolioService.calculatePortfolioPerformance(options.overridePositions);
     const closedPositions = options.overrideClosedPositions || await portfolioService.getClosedPositions();
-    const alpacaAccount = await alpacaService.getAccount();
 
     const totalClosedTrades = closedPositions.length;
     const winningTrades = closedPositions.filter((p) => Number(p.realizedPnL || 0) > 0);
@@ -83,11 +81,12 @@ export class ReportingService {
         items: closedPositions,
       },
       broker: {
-        status: alpacaAccount.status,
-        cash: alpacaAccount.cash,
-        portfolioValue: alpacaAccount.portfolio_value,
-        buyingPower: alpacaAccount.buying_power,
-        currency: alpacaAccount.currency,
+        name: 'Happi',
+        status: 'ACTIVE',
+        cash: capitalStatus.availableCash,
+        portfolioValue: parseFloat((portfolioPerformance.summary.totalMarketValue + capitalStatus.availableCash).toFixed(2)),
+        buyingPower: capitalStatus.availableCash,
+        currency: capitalStatus.currency,
       },
     };
   }

@@ -124,7 +124,7 @@ describe('📊 Suite de Pruebas Unitarias: Motor de Reportería Cuantitativa y G
       const mockPositions = [
         {
           symbol: 'NVDA',
-          broker: 'Alpaca',
+          broker: 'Happi',
           shares: 0.25,
           averageBuyPrice: 100,
           currentPrice: 120,

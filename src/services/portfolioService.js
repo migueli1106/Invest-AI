@@ -1,13 +1,12 @@
 import { getPortfolioCollection } from '../db/firestore.js';
 import { PortfolioHoldingSchema } from '../models/schemas.js';
 import { marketDataService } from './marketDataService.js';
-import { alpacaService } from './alpacaService.js';
 import { capitalManagerService } from './capitalManagerService.js';
 import { env } from '../config/environment.js';
 
 /**
  * 💼 [INVEST AI] Servicio de Gestión y Valoración de Portafolio Real
- * Gestiona posiciones en brokers (Happi/Osmo/Alpaca), computa P&L y rotación de capital.
+ * Gestiona posiciones en brokers (Happi/Osmo), computa P&L y rotación de capital.
  */
 
 class PortfolioService {
@@ -174,56 +173,6 @@ class PortfolioService {
     return { id: positionId, ...currentData, ...updateFields };
   }
 
-  /**
-   * Sincroniza posiciones activas en Alpaca con Firestore y el gestor de capital.
-   */
-  async syncWithAlpaca() {
-    try {
-      const account = await alpacaService.getAccount();
-      capitalManagerService.syncWithAlpacaBalance(account);
-
-      const positions = await alpacaService.getPositions();
-      const synced = [];
-
-      for (const p of positions) {
-        const symbol = p.symbol;
-        const shares = parseFloat(p.qty);
-        const buyPrice = parseFloat(p.avg_entry_price);
-        const currentPrice = parseFloat(p.current_price);
-        const marketValue = parseFloat(p.market_value);
-
-        const posData = {
-          symbol,
-          shares,
-          averageBuyPrice: buyPrice,
-          totalCost: parseFloat((shares * buyPrice).toFixed(2)),
-          currentMarketValue: marketValue,
-          unrealizedPnL: parseFloat(p.unrealized_pl || 0),
-          unrealizedPnLPercent: parseFloat((Number(p.unrealized_plpc || 0) * 100).toFixed(2)),
-          broker: 'Alpaca',
-          status: 'OPEN',
-          lastUpdated: new Date().toISOString(),
-        };
-
-        const docId = `alpaca_${symbol}`;
-        if (this.isTest()) {
-          this.memoryPositions.set(docId, { id: docId, ...posData });
-          synced.push({ id: docId, ...posData });
-        } else {
-          try {
-            await getPortfolioCollection().doc(docId).set(posData, { merge: true });
-            synced.push({ id: docId, ...posData });
-          } catch (err) {
-            console.warn(`⚠️ Fallo guardando posición Alpaca: ${err.message}`);
-          }
-        }
-      }
-      return { syncedCount: synced.length, positions: synced };
-    } catch (err) {
-      console.warn(`⚠️ [PORTFOLIO SYNC] Error: ${err.message}`);
-      return { syncedCount: 0, positions: [], error: err.message };
-    }
-  }
 
   /**
    * Calcula el rendimiento consolidado del portafolio.

@@ -3,13 +3,12 @@ import { getSignalsCollection } from '../db/firestore.js';
 import { whatsappService } from '../services/whatsappService.js';
 import { twilioService } from '../services/twilioService.js';
 import { telegramService } from '../services/telegramService.js';
-import { alpacaService } from '../services/alpacaService.js';
 import { capitalManagerService } from '../services/capitalManagerService.js';
 import { portfolioService } from '../services/portfolioService.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
- * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Alpaca y Cero Re-Fondeo.
+ * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Happi y Cero Re-Fondeo.
  */
 
 class WebhookHandler {
@@ -38,7 +37,7 @@ class WebhookHandler {
 
         if (buttonId.startsWith('approve_')) {
           if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
-          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n📱 Abre Happi/Alpaca para colocar la orden.`);
+          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n📱 Abre Happi para colocar la orden.`);
           return { status: 200, result: { action: 'APPROVED', symbol } };
         } else if (buttonId.startsWith('reject_')) {
           if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', from);
@@ -61,7 +60,7 @@ class WebhookHandler {
       if (upper === 'APROBAR' || upper.startsWith('APROBAR') || upper === 'SI' || upper === 'SÍ') {
         const symbol = upper.includes(' ') ? upper.split(' ')[1] : 'ACTIVO';
         if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
-        const text = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de ${symbol}. \n📱 Revisa tu broker (Happi/Alpaca).`;
+        const text = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de ${symbol}. \n📱 Revisa tu broker (Happi).`;
         await twilioService.sendTextMessage(from, text);
         return { status: 200, result: { action: 'APPROVED', from, symbol }, twiml: `<Response><Message>${text}</Message></Response>` };
       } else if (upper === 'RECHAZAR' || upper.startsWith('RECHAZAR') || upper === 'NO') {
@@ -110,46 +109,42 @@ class WebhookHandler {
             return { status: 200, result: { action: 'BLOCKED_ZERO_REFUND', symbol, reason: sizing.reason } };
           }
 
-          // Ejecución automática en Alpaca
-          const order = await alpacaService.submitBracketOrder({
-            symbol,
-            qty: sizing.qty,
-            notional: sizing.notional,
-            takeProfitPrice,
-            stopLossPrice,
-          });
+          // Co-Piloto Hapi Asistido (Opción A): Reserva de Capital y Registro en Portafolio
+          const orderId = `hapi_${symbol.toLowerCase()}_${Date.now()}`;
 
-          capitalManagerService.reserveCapital(order.id, sizing.notional);
+          capitalManagerService.reserveCapital(orderId, sizing.notional);
           await portfolioService.addPosition({
             symbol,
             shares: sizing.qty,
             buyPrice: currentPrice,
-            broker: 'Alpaca',
+            broker: 'Happi',
             stopLoss: stopLossPrice,
             targetPrice: takeProfitPrice,
           });
 
           if (options.updateDb) {
-            await this.updateSignalStatus(symbol, 'EXECUTED', String(from?.id || 'telegram'), order.id);
+            await this.updateSignalStatus(symbol, 'APPROVED', String(from?.id || 'telegram'), orderId);
           }
 
           if (chatId) {
+            const hapiAppUrl = 'https://app.hapi.trade/';
             const confirmMsg = [
-              `🚀 *¡ORDEN EJECUTADA EN ALPACA!*`,
+              `🚀 *¡OPERACIÓN APROBADA POR MIGUEL JIMENEZ!*`,
               ``,
-              `Se ha colocado la orden Bracket fraccionada para *${symbol}* (${env.BROKER_ENVIRONMENT}).`,
+              `Capital reservado en el pool ($35 USD) y activo registrado para *${symbol}*.`,
               `• Inversión Nocional: $${sizing.notional.toFixed(2)} USD`,
-              `• Cantidad Fraccionada: ${sizing.qty} acc.`,
+              `• Cantidad Fraccionada Estimada: ${sizing.qty} acc.`,
               `• Target Take-Profit: $${takeProfitPrice.toFixed(2)}`,
               `• Stop-Loss Protección: $${stopLossPrice.toFixed(2)}`,
-              `• Order ID: \`${order.id}\``,
+              `• Reference ID: \`${orderId}\``,
               ``,
-              `_Tu orden ya está activa en Wall Street con salida automática._`,
+              `📱 Abre Happi para confirmar la orden: [Ir a Happi](${hapiAppUrl})`,
+              `_Capital protegido bajo protocolo ZERO_REFUND_STRICT._`,
             ].join('\n');
             await telegramService.sendMessage(chatId, confirmMsg);
           }
 
-          return { status: 200, result: { action: 'APPROVED', symbol, orderId: order.id, executed: true } };
+          return { status: 200, result: { action: 'APPROVED', symbol, orderId, executed: true } };
 
         } else if (data.startsWith('reject_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
@@ -203,7 +198,7 @@ class WebhookHandler {
 
       if (!snap.empty) {
         const updateData = { status, resolvedAt: new Date().toISOString(), resolvedBy: userPhone };
-        if (orderId) updateData.alpacaOrderId = orderId;
+        if (orderId) updateData.brokerOrderId = orderId;
         await snap.docs[0].ref.update(updateData);
       }
     } catch (err) {

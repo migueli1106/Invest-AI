@@ -58,7 +58,7 @@ const LEAK_PATTERNS = [
   { name: 'Token JWT Hardcodeado', regex: /eyJ[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_.+/=]{30,}/ },
   { name: 'Clave Privada RSA/SSH', regex: /-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----/ },
   { name: 'AWS Access Key ID Hardcodeada', regex: /(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/ },
-  { name: 'Alpaca / Broker Secret Hardcodeado', regex: /(APCA-API-KEY-ID|APCA-API-SECRET-KEY)\s*[:=]\s*['"][a-zA-Z0-9]{15,}['"]/i },
+  { name: 'Broker API Secret Hardcodeado', regex: /(APCA-API-KEY-ID|APCA-API-SECRET-KEY)\s*[:=]\s*['"][a-zA-Z0-9]{15,}['"]/i },
 ];
 
 let leaksFound = 0;
