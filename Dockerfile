@@ -9,6 +9,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copiar código fuente de producción
 COPY src/ ./src/
+COPY public/ ./public/
 COPY package.json ./
 
 # Asignar usuario no privilegiado para seguridad Zero-Trust

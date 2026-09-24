@@ -1,4 +1,6 @@
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { env } from './config/environment.js';
 import { webhookHandler } from './api/webhookHandler.js';
 import { predictionEngine } from './services/predictionEngine.js';
@@ -15,6 +17,41 @@ import { reportingService } from './services/reportingService.js';
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
  * Soporta healthcheck, webhooks, endpoints REST de portafolio, Alpaca y cron.
  */
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+};
+
+const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
+
+function serveStaticFile(req, res, pathname) {
+  const rawUrl = req.url || '';
+  if (rawUrl.includes('..') || decodeURI(rawUrl).includes('..')) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return true;
+  }
+  const target = pathname === '/' || pathname === '/dashboard' ? '/index.html' : pathname;
+  const safePath = path.normalize(path.join(PUBLIC_DIR, target));
+  if (!safePath.startsWith(PUBLIC_DIR)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden' }));
+    return true;
+  }
+  if (fs.existsSync(safePath) && fs.statSync(safePath).isFile()) {
+    const ext = path.extname(safePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+    fs.createReadStream(safePath).pipe(res);
+    return true;
+  }
+  return false;
+}
 
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
@@ -36,7 +73,7 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   // 1. Healthcheck probe para Google Cloud Run
-  if (method === 'GET' && (url.pathname === '/health' || url.pathname === '/')) {
+  if (method === 'GET' && url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'HEALTHY',
@@ -49,7 +86,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 2. Webhook Handshake de Meta (GET /webhook)
+  // 2. Terminal Web Institucional y Activos Estáticos PWA (GET / o /dashboard o /public/*)
+  if (method === 'GET' && serveStaticFile(req, res, url.pathname)) {
+    return;
+  }
+
+  // 3. Webhook Handshake de Meta (GET /webhook)
   if (method === 'GET' && url.pathname === '/webhook') {
     const result = webhookHandler.handleVerification(url.searchParams);
     res.writeHead(result.status, { 'Content-Type': 'text/plain' });

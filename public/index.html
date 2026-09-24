@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Invest AI — Terminal Institucional // Wall Street</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#05070a" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/dashboard.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- Header Institucional -->
+  <header class="terminal-header">
+    <div class="brand-group">
+      <img src="/icon.svg" alt="Invest AI" class="brand-icon" />
+      <div>
+        <div class="brand-title">INVEST AI <span style="color:var(--color-green); font-size:0.85rem;">// PRO</span></div>
+        <div class="brand-sub">SOVEREIGN QUANTITATIVE ENGINE</div>
+      </div>
+    </div>
+    <div class="actions-group">
+      <div class="status-pill">
+        <span class="pulse-dot"></span>
+        <span id="market-status-text">NYSE // CLOUD RUN LIVE</span>
+      </div>
+      <div class="clock-display" id="clock-display">--:--:-- NY</div>
+      <button class="btn-refresh" id="btn-refresh" title="Refrescar telemetría">
+        <span id="btn-text">⟳ REFRESH</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal -->
+  <main class="terminal-main">
+    <!-- Fila 1: KPI Cards de Capital (Cero Re-Fondeo) -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <span class="badge-policy">ZERO_REFUND</span>
+        <div class="kpi-label">Capital Total Autorizado</div>
+        <div class="kpi-val" id="kpi-total-capital">$35.00</div>
+        <div class="kpi-sub neutral" id="kpi-policy-sub">Pool Base de Inversión (USD)</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">Disponible Líquido</div>
+        <div class="kpi-val positive" id="kpi-available-cash">$35.00</div>
+        <div class="kpi-sub neutral" id="kpi-cash-sub">Capacidad Operativa: <span class="positive">HABILITADA</span></div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">Comprometido en Mercado</div>
+        <div class="kpi-val" id="kpi-deployed-capital">$0.00</div>
+        <div class="kpi-sub neutral" id="kpi-deployed-sub">0 Posiciones Activas</div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label">P&L Flotante Total</div>
+        <div class="kpi-val" id="kpi-pnl-val">$0.00</div>
+        <div class="kpi-sub" id="kpi-pnl-sub">0.00% Retorno Portafolio</div>
+      </div>
+    </section>
+
+    <!-- Fila 2: Gráfico y Telemetría Cuantitativa -->
+    <section class="layout-split">
+      <!-- Curva de Rendimiento / Capital -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>📈 CURVA DE RENDIMIENTO & VALUACIÓN EN VIVO</span>
+          </div>
+          <span style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);" id="chart-timestamp">--</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="capitalChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Telemetría Cuantitativa -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>🎯 TELEMETRÍA CUANTITATIVA</span>
+          </div>
+          <span class="broker-pill" id="broker-status-pill">ALPACALIVE</span>
+        </div>
+        <div class="telemetry-list">
+          <div class="telem-row">
+            <span class="telem-key">Win Rate (%)</span>
+            <span class="telem-val positive" id="telem-winrate">0.0%</span>
+          </div>
+          <div class="telem-row">
+            <span class="telem-key">Profit Factor</span>
+            <span class="telem-val" id="telem-profit-factor">0.00</span>
+          </div>
+          <div class="telem-row">
+            <span class="telem-key">P&L Realizado</span>
+            <span class="telem-val" id="telem-realized-pnl">$0.00</span>
+          </div>
+          <div class="telem-row">
+            <span class="telem-key">Poder de Compra (Alpaca)</span>
+            <span class="telem-val" id="telem-buying-power">$0.00</span>
+          </div>
+          <div class="telem-row">
+            <span class="telem-key">Efectivo Broker</span>
+            <span class="telem-val" id="telem-alpaca-cash">$0.00</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fila 3: Mesa de Posiciones Abiertas -->
+    <section class="glass-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>💼 POSICIONES ACTIVAS EN MERCADO</span>
+          <span class="ticker-badge" style="font-size:0.7rem; margin-left:0.5rem;" id="positions-count-badge">0</span>
+        </div>
+        <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--color-cyan);">
+          AUTO-SYNC HAPPI / ALPACA
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="positions-table">
+          <thead>
+            <tr>
+              <th>Activo</th>
+              <th>Broker</th>
+              <th>Acciones</th>
+              <th>Compra Prom.</th>
+              <th>Precio Actual</th>
+              <th>Take-Profit</th>
+              <th>Stop-Loss</th>
+              <th>Valor Mercado</th>
+              <th>P&L Flotante</th>
+            </tr>
+          </thead>
+          <tbody id="positions-tbody">
+            <tr>
+              <td colspan="9" class="empty-state">Sincronizando posiciones de mercado...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer Terminal -->
+    <footer class="terminal-footer">
+      <div>INVEST AI // DEKO LABS &copy; 2026 — SISTEMA AUTÓNOMO DE ALTA FRECUENCIA</div>
+      <div id="footer-status">GOOGLE CLOUD RUN // US-CENTRAL1 // GCS ARCHIVE</div>
+    </footer>
+  </main>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e17"/>
+      <stop offset="100%" stop-color="#05070a"/>
+    </linearGradient>
+    <linearGradient id="neonGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#00ff66"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bgGrad)"/>
+  <rect x="16" y="16" width="480" height="480" rx="80" fill="none" stroke="#182234" stroke-width="4"/>
+  <path d="M96 384 L192 272 L272 320 L384 160 L416 192" fill="none" stroke="url(#neonGrad)" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <circle cx="384" cy="160" r="16" fill="#00ff66" filter="url(#glow)"/>
+  <path d="M140 140 H180 V220 H140 Z M220 140 H260 V220 H220 Z" fill="#ffffff" opacity="0.1"/>
+  <text x="256" y="440" font-family="'JetBrains Mono', monospace" font-size="44" font-weight="700" fill="#00ff66" text-anchor="middle" letter-spacing="4">INVEST AI</text>
+</svg>

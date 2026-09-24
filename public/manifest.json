@@ -1,0 +1,18 @@
+{
+  "name": "Invest AI — Terminal Financiera",
+  "short_name": "Invest AI",
+  "description": "Terminal institucional de grado Wall Street y gestión cuantitativa de inversiones",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070a",
+  "theme_color": "#05070a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
