@@ -43,6 +43,11 @@ const EnvironmentSchema = z.object({
   }),
   BRIDGE_SECRET: z.string().default('invest_ai_bridge_internal_secret'),
 
+  // Worker Residencial de Automatización Local (Opción B)
+  CLOUD_RUN_URL: z.string().default('https://invest-ai-engine-891662254338.us-central1.run.app'),
+  LOCAL_CHROME_PATH: z.string().optional(),
+  LOCAL_CHROME_PROFILE_DIR: z.string().default('./.hapi-profile'),
+
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

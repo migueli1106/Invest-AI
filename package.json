@@ -9,8 +9,10 @@
     "sync": "node src/index.js --sync",
     "list": "node src/index.js --list",
     "signals": "node src/index.js --signals",
+    "worker:local": "node src/worker/localBridgeWorker.js",
+    "worker:local:sim": "node src/worker/localBridgeWorker.js --dry-run",
     "test:security": "node --test tests/security/zero-trust.test.js",
-    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js tests/unit/twilio.test.js tests/unit/telegram.test.js tests/unit/portfolio.test.js tests/unit/scheduler.test.js tests/unit/capitalManager.test.js tests/unit/cronSecurity.test.js tests/unit/reporting.test.js tests/unit/dashboardStatic.test.js tests/unit/executionBridge.test.js",
+    "test:unit": "node --test tests/unit/marketData.test.js tests/unit/predictionEngine.test.js tests/unit/whatsapp.test.js tests/unit/twilio.test.js tests/unit/telegram.test.js tests/unit/portfolio.test.js tests/unit/scheduler.test.js tests/unit/capitalManager.test.js tests/unit/cronSecurity.test.js tests/unit/reporting.test.js tests/unit/dashboardStatic.test.js tests/unit/executionBridge.test.js tests/unit/localWorker.test.js",
     "audit:secrets": "node scripts/audit-secrets.js",
     "audit:monoliths": "node scripts/audit-monoliths.js",
     "audit:deploy": "node scripts/audit-deployment.js",
@@ -31,6 +33,7 @@
     "@google-cloud/firestore": "^7.11.0",
     "@google-cloud/storage": "^8.2.0",
     "dotenv": "^16.4.7",
+    "puppeteer-core": "^25.12.0",
     "yahoo-finance2": "^3.1.2",
     "zod": "^3.24.2"
   }
