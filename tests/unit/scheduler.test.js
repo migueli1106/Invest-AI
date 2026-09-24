@@ -86,4 +86,14 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
     assert.equal(tpAlert.trigger.type, 'TAKE_PROFIT');
     assert.equal(tpAlert.sent, true);
   });
+
+  it('runPortfolioHealthCheck debe respetar el cooldown de 30m para no spamear alertas repetidas de salida', async () => {
+    // La prueba anterior acaba de registrar la alerta para 'TEST_TP' en this.exitAlertHistory
+    const secondCheck = await schedulerService.runPortfolioHealthCheck('test_chat_123');
+    assert.ok(secondCheck.checkedAt);
+    const throttledAlert = secondCheck.alerts.find((a) => a.trigger.symbol === 'TEST_TP');
+    assert.ok(throttledAlert);
+    assert.equal(throttledAlert.sent, false);
+    assert.equal(throttledAlert.skipped, 'COOLDOWN');
+  });
 });

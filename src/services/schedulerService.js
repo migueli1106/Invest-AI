@@ -10,7 +10,9 @@ import { telegramService } from './telegramService.js';
 class SchedulerService {
   constructor() {
     this.alertHistory = new Map(); // symbol -> timestamp en ms
-    this.COOLDOWN_MS = 4 * 60 * 60 * 1000; // Ventana de 4 horas anti-spam
+    this.COOLDOWN_MS = 4 * 60 * 60 * 1000; // Ventana de 4 horas anti-spam para señales
+    this.exitAlertHistory = new Map(); // positionId/symbol -> timestamp en ms
+    this.EXIT_COOLDOWN_MS = 30 * 60 * 1000; // Ventana de 30 minutos anti-spam para alertas de salida repetidas
   }
 
   /**
@@ -152,8 +154,22 @@ class SchedulerService {
     const triggers = await portfolioService.checkExitTriggers(performance.positions);
 
     const alertResults = [];
+    const now = Date.now();
 
     for (const trigger of triggers) {
+      const posKey = String(trigger.positionId || trigger.symbol);
+      const lastExitAlert = this.exitAlertHistory.get(posKey);
+
+      if (lastExitAlert && now - lastExitAlert < this.EXIT_COOLDOWN_MS) {
+        console.info(`⏳ [SCHEDULER] Omitiendo alerta repetida de salida para ${trigger.symbol} (${trigger.type}) - En enfriamiento de 30m.`);
+        alertResults.push({
+          trigger,
+          sent: false,
+          skipped: 'COOLDOWN',
+        });
+        continue;
+      }
+
       const brokerName = (trigger.broker || 'HAPPI').toUpperCase();
       let alertMessage = '';
 
@@ -179,6 +195,7 @@ class SchedulerService {
         const sendResult = await telegramService.sendMessage(targetChatId, alertMessage, {
           parse_mode: 'Markdown',
         });
+        this.exitAlertHistory.set(posKey, now);
         alertResults.push({
           trigger,
           sent: true,

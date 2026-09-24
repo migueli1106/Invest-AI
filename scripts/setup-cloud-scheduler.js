@@ -112,9 +112,9 @@ async function main() {
     },
     {
       name: 'invest-ai-portfolio-guard',
-      schedule: '*/5 9-16 * * 1-5',
+      schedule: '* 9-16 * * 1-5',
       uri: `${baseUrl}/api/cron/portfolio`,
-      description: 'Invest AI - Guardian de Take-Profit y Stop-Loss cada 5m en Wall Street',
+      description: 'Invest AI - Guardian de Take-Profit y Stop-Loss cada 1m en Wall Street',
       bodyStr: '{}',
     },
   ];
