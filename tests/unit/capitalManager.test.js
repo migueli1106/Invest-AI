@@ -3,7 +3,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { capitalManagerService } from '../../src/services/capitalManagerService.js';
 
-describe('💰 Suite de Pruebas Unitarias: Gestor de Capital y Regla CERO RE-FONDEO', () => {
+describe('💰 Suite de Pruebas Unitarias: Gestor de Capital Flexible Multi-Posición (FLEXIBLE_CAPITAL)', () => {
   beforeEach(() => {
     capitalManagerService.reset(35.00);
   });
@@ -28,20 +28,26 @@ describe('💰 Suite de Pruebas Unitarias: Gestor de Capital y Regla CERO RE-FON
     assert.equal(sizingSPY.qty, 0.0648);
   });
 
-  it('Regla Cero Re-Fondeo: debe bloquear cualquier compra si el capital está 100% desplegado', () => {
+  it('Capital Flexible Multi-Posición: debe permitir múltiples compras simultáneas sin bloquear por pool', () => {
     // 1. Reservar los $35 USD para la primera posición
     capitalManagerService.reserveCapital('ord_nvda_1', 35.00);
 
     const statusAfterReserve = capitalManagerService.getCapitalStatus();
-    assert.equal(statusAfterReserve.availableCash, 0.00);
-    assert.equal(statusAfterReserve.deployedCapital, 35.00);
-    assert.equal(statusAfterReserve.canTrade, false);
+    assert.equal(statusAfterReserve.policy, 'FLEXIBLE_CAPITAL');
+    assert.equal(statusAfterReserve.canTrade, true);
 
-    // 2. Intento de compra de un segundo activo (ej. AAPL) sin fondos libres
+    // 2. Compra de un segundo activo (ej. AAPL) - ahora permitido bajo FLEXIBLE_CAPITAL
     const secondTrade = capitalManagerService.calculateFractionalSizing('AAPL', 220.00, 35.00);
-    assert.equal(secondTrade.allowed, false);
-    assert.equal(secondTrade.reason, 'INSUFFICIENT_POOL_WAIT_ROTATION');
-    assert.equal(secondTrade.availableCash, 0.00);
+    assert.equal(secondTrade.allowed, true);
+    assert.equal(secondTrade.symbol, 'AAPL');
+    assert.equal(secondTrade.notional, 35.00);
+    assert.ok(secondTrade.qty > 0);
+
+    // 3. Reservar la segunda posición y verificar una tercera
+    capitalManagerService.reserveCapital('ord_aapl_2', 35.00);
+    const thirdTrade = capitalManagerService.calculateFractionalSizing('MSFT', 400.00, 35.00);
+    assert.equal(thirdTrade.allowed, true);
+    assert.equal(thirdTrade.symbol, 'MSFT');
   });
 
   it('Rotación de Capital: debe liberar los fondos al pool líquido tras la salida de una posición', () => {

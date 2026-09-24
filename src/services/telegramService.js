@@ -175,7 +175,7 @@ class TelegramService {
       `📊 *INVEST AI — RESUMEN EJECUTIVO DE RENDIMIENTO*`,
       `📅 *Fecha:* ${report.date} | *ID:* \`${report.reportId}\``,
       ``,
-      `💰 *Pool de Capital (Cero Re-Fondeo):*`,
+      `💰 *Resumen de Capital y Posiciones:*`,
       `• Total Autorizado: *$${capital.totalCapital.toFixed(2)} ${capital.currency}*`,
       `• Disponible Libre: *$${capital.availableCash.toFixed(2)} ${capital.currency}*`,
       `• En Mercado: *$${capital.deployedCapital.toFixed(2)} ${capital.currency}*`,

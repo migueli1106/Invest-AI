@@ -42,7 +42,7 @@ describe('🖥️ Suite de Pruebas Unitarias: Despachador de Archivos Estáticos
     assert.equal(res.status, 200);
     assert.ok(res.headers.get('content-type').includes('text/html'));
     const html = await res.text();
-    assert.ok(html.includes('ZERO_REFUND'));
+    assert.ok(html.includes('FLEXIBLE'));
   });
 
   it('GET /css/dashboard.css debe servir la hoja de estilos con Content-Type text/css', async () => {

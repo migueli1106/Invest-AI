@@ -9,7 +9,7 @@ import { executionBridge } from '../services/broker/executionBridge.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
- * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Happi y Cero Re-Fondeo.
+ * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Happi y Capital Flexible.
  */
 
 class WebhookHandler {
@@ -110,12 +110,6 @@ class WebhookHandler {
             side: 'BUY',
             chatId,
           });
-
-          if (!executionResult.success && executionResult.blocked) {
-            const warnMsg = `⚠️ *¡CAPITAL 100% DESPLEGADO ($35.00 USD)!*\n\nNo es posible abrir *${symbol}* bajo la regla de CERO RE-FONDEO.\nEl capital rotará automáticamente al cerrarse una posición en Take-Profit o Stop-Loss.`;
-            if (chatId) await telegramService.sendMessage(chatId, warnMsg);
-            return { status: 200, result: { action: 'BLOCKED_ZERO_REFUND', symbol, reason: executionResult.reason } };
-          }
 
           const orderId = executionResult.orderId || executionResult.bridgeOrderId;
           if (options.updateDb) {

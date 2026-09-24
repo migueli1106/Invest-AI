@@ -106,7 +106,7 @@ class LocalBridgeWorker {
 
   /**
    * Procesa una orden individual: automatiza la compra y reporta el resultado.
-   * Regla CERO RE-FONDEO: ante cualquier fallo, cancela y libera fondos de inmediato.
+   * Regla FLEXIBLE_CAPITAL: ante cualquier fallo, cancela y concilia fondos de inmediato.
    */
   async handleSingleOrder(order) {
     const { bridgeOrderId, symbol, notional } = order;
@@ -127,7 +127,7 @@ class LocalBridgeWorker {
     } catch (err) {
       console.error(`💥 [WORKER ERROR] Falló orden ${bridgeOrderId}: ${err.message}`);
 
-      // CERO RE-FONDEO: Cancelar y liberar fondos en Cloud Run
+      // FLEXIBLE_CAPITAL: Cancelar y conciliar fondos en Cloud Run
       try {
         await this.reportCompletion({
           bridgeOrderId,

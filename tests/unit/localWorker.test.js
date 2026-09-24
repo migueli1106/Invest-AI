@@ -110,7 +110,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
     assert.equal(completed.fillPrice, 140.00);
   });
 
-  // 5. CERO RE-FONDEO: Resiliencia y Liberación Inmediata de Capital ante Fallos
+  // 5. FLEXIBLE_CAPITAL: Resiliencia y Liberación Inmediata de Capital ante Fallos
   it('Ante un fallo del navegador, debe reportar CANCELLED y liberar los $35 USD en Cloud Run', async () => {
     const queued = localBridgeService.queueOrder({
       symbol: 'TSLA',
@@ -136,7 +136,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
       assert.equal(order.status, 'CANCELLED');
       assert.ok(order.notes.includes('Timeout'));
 
-      // Regla Cero Re-Fondeo: los $35 USD vuelven a estar 100% libres
+      // Regla FLEXIBLE_CAPITAL: los $35 USD vuelven a estar 100% libres
       const cap = capitalManagerService.getCapitalStatus();
       assert.equal(cap.availableCash, 35.00);
       assert.equal(cap.deployedCapital, 0.00);

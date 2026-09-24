@@ -115,7 +115,7 @@ describe('📊 Suite de Pruebas Unitarias: Motor de Reportería Cuantitativa y G
 
       assert.ok(report.reportId.startsWith('rep_'));
       assert.ok(report.date);
-      assert.equal(report.capital.policy, 'ZERO_REFUND_STRICT');
+      assert.equal(report.capital.policy, 'FLEXIBLE_CAPITAL');
       assert.ok(typeof report.capital.totalCapital === 'number');
       assert.ok(report.broker);
     });
@@ -142,7 +142,7 @@ describe('📊 Suite de Pruebas Unitarias: Motor de Reportería Cuantitativa y G
       const md = reportingService.generateReportMarkdown(report);
 
       assert.match(md, /INVEST AI — REPORTE EJECUTIVO/);
-      assert.match(md, /SALUD DEL POOL DE CAPITAL/);
+      assert.match(md, /SALUD DEL CAPITAL & LIQUIDEZ/);
       assert.match(md, /MÉTRICAS CUANTITATIVAS DE TRADING/);
       assert.match(md, /POSICIONES ABIERTAS EN MERCADO/);
       assert.match(md, /NVDA/);
@@ -191,7 +191,7 @@ describe('📊 Suite de Pruebas Unitarias: Motor de Reportería Cuantitativa y G
       const result = await telegramService.sendPortfolioReport('123456789', report);
       assert.equal(result.simulated, true);
       assert.match(result.text, /RESUMEN EJECUTIVO DE RENDIMIENTO/);
-      assert.match(result.text, /Pool de Capital/);
+      assert.match(result.text, /Resumen de Capital y Posiciones/);
     });
   });
 

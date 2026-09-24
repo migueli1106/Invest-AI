@@ -15,7 +15,7 @@ class LocalBridgeService {
 
   /**
    * Encola una orden autorizada para ser recogida por el agente de automatización local.
-   * Reserva preventivamente el capital del pool ($35 USD) bajo la regla ZERO_REFUND_STRICT.
+   * Contabiliza preventivamente el capital asignado ($35 USD) bajo la política FLEXIBLE_CAPITAL.
    * @param {object} orderData
    */
   queueOrder({ symbol, qty, notional, currentPrice, stopLoss, targetPrice, side = 'BUY' }) {

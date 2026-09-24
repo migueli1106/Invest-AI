@@ -105,7 +105,7 @@ export class ReportingService {
       ``,
       `---`,
       ``,
-      `## 💰 1. SALUD DEL POOL DE CAPITAL (CERO RE-FONDEO)`,
+      `## 💰 1. SALUD DEL CAPITAL & LIQUIDEZ`,
       `- **Capital Total Autorizado:** $${capital.totalCapital.toFixed(2)} ${capital.currency}`,
       `- **Disponible Líquido:** $${capital.availableCash.toFixed(2)} ${capital.currency}`,
       `- **Capital Desplegado en Mercado:** $${capital.deployedCapital.toFixed(2)} ${capital.currency}`,

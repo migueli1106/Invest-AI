@@ -9,7 +9,7 @@ import { localBridgeService } from './localBridgeService.js';
  * - Opción A: Hapi Copilot Asistido (Cloud Run)
  * - Opción B: Local Automation Bridge (Worker Residencial)
  * 
- * Salvaguarda permanentemente la regla de CERO RE-FONDEO ($35 USD).
+ * Opera bajo la política institucional de Capital Flexible Multi-Posición (FLEXIBLE_CAPITAL).
  */
 class ExecutionBridge {
   constructor() {
@@ -44,26 +44,24 @@ class ExecutionBridge {
 
   /**
    * Ejecuta o encola la orden según el patrón Strategy configurado.
-   * Valida estrictamente el dimensionamiento del capital con capitalManagerService.
+   * Aplica dimensionamiento nominal por operación ($35.00 USD) permitiendo multi-posiciones simultáneas.
    * @param {object} params
    */
   async executeOrder({ symbol, qty, notional, currentPrice, stopLoss, targetPrice, side = 'BUY', chatId = null }) {
     const sym = (symbol || 'ACTIVO').toUpperCase();
     const price = Number(currentPrice || 100.00);
 
-    // 1. Dimensionamiento y Validación de Cero Re-Fondeo ($35 USD)
-    const sizing = capitalManagerService.calculateFractionalSizing(sym, price, 35.00);
+    // Dimensionamiento nominal bajo Capital Flexible Multi-Posición
+    const sizing = capitalManagerService.calculateFractionalSizing(sym, price, notional || 35.00);
 
     if (!sizing.allowed) {
-      console.warn(`🛑 [EXECUTION BRIDGE] Orden bloqueada para ${sym}: ${sizing.reason} (Pool agotado o saldo < $1).`);
+      console.warn(`⚠️ [EXECUTION BRIDGE] Parámetros inválidos para orden en ${sym}: ${sizing.reason}`);
       return {
         success: false,
-        blocked: true,
-        reason: sizing.reason,
+        error: sizing.reason,
         symbol: sym,
         mode: this.mode,
         broker: this.brokerName,
-        capitalStatus: capitalManagerService.getCapitalStatus(),
       };
     }
 
@@ -83,7 +81,7 @@ class ExecutionBridge {
       chatId,
     };
 
-    // 2. Despacho según el modo de ejecución (Strategy)
+    // Despacho según el modo de ejecución activo (Strategy)
     if (this.mode === 'LOCAL_AGENT') {
       const bridgeResult = this.strategies.LOCAL_AGENT.queueOrder(orderPayload);
       return {

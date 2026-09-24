@@ -1,6 +1,7 @@
 /**
- * 💰 [INVEST AI] Gestor de Capital y Regla Sagrada de CERO RE-FONDEO
- * Controla el pool de capital ($35.00 USD base), compras fraccionadas y rotación continua.
+ * 💰 [INVEST AI] Gestor de Capital Flexible Multi-Posición
+ * Administra el dimensionamiento fraccionario por operación ($35.00 USD nominal)
+ * permitiendo la apertura simultánea de múltiples trades sin bloqueos de pool agotado.
  */
 
 class CapitalManagerService {
@@ -13,7 +14,7 @@ class CapitalManagerService {
   }
 
   /**
-   * Retorna el estado consolidado del pool de capital y capacidad de trading.
+   * Retorna el estado consolidado del pool de capital bajo la política flexible.
    */
   getCapitalStatus() {
     return {
@@ -21,37 +22,26 @@ class CapitalManagerService {
       deployedCapital: parseFloat(this.deployedCapital.toFixed(2)),
       availableCash: parseFloat(this.availableCash.toFixed(2)),
       currency: 'USD',
-      canTrade: this.availableCash >= 1.00,
+      canTrade: true, // Capacidad multi-posición permanente
       activeReservationsCount: this.reservations.size,
-      policy: 'ZERO_REFUND_STRICT',
+      policy: 'FLEXIBLE_CAPITAL',
     };
   }
 
   /**
-   * Calcula el dimensionamiento fraccionario para una compra con tope de $35 USD.
+   * Calcula el dimensionamiento fraccionario para una compra (por defecto $35.00 USD por operación).
+   * En el modelo Capital Flexible, no bloquea por pool agotado, permitiendo multi-posiciones simultáneas.
    * @param {string} symbol - Ticker del activo
    * @param {number} currentPrice - Precio actual de mercado
-   * @param {number} [maxAllocation=35.00] - Asignación máxima por trade
+   * @param {number} [notionalAllocation=35.00] - Asignación nominal por trade
    */
-  calculateFractionalSizing(symbol, currentPrice, maxAllocation = 35.00) {
+  calculateFractionalSizing(symbol, currentPrice, notionalAllocation = 35.00) {
     const cleanPrice = Number(currentPrice);
     if (!cleanPrice || cleanPrice <= 0) {
       throw new Error(`Precio de cotización inválido para dimensionamiento: ${currentPrice}`);
     }
 
-    // Regla de Cero Re-Fondeo: Requiere mínimo $1.00 USD libre en el pool
-    if (this.availableCash < 1.00) {
-      return {
-        allowed: false,
-        reason: 'INSUFFICIENT_POOL_WAIT_ROTATION',
-        availableCash: parseFloat(this.availableCash.toFixed(2)),
-        symbol: symbol.toUpperCase(),
-        requiredMin: 1.00,
-      };
-    }
-
-    // Nocional asignado limitado por el efectivo disponible y el tope de la estrategia
-    const notional = parseFloat(Math.min(this.availableCash, maxAllocation).toFixed(2));
+    const notional = parseFloat(Math.max(1.00, Number(notionalAllocation || 35.00)).toFixed(2));
     
     // Cálculo de cantidad fraccionada con 4 decimales
     const qty = parseFloat((notional / cleanPrice).toFixed(4));
@@ -71,12 +61,13 @@ class CapitalManagerService {
       currentPrice: cleanPrice,
       notional,
       qty,
-      remainingCashAfterTrade: parseFloat((this.availableCash - notional).toFixed(2)),
+      remainingCashAfterTrade: parseFloat(Math.max(0, this.availableCash - notional).toFixed(2)),
     };
   }
 
   /**
-   * Reserva y bloquea capital al emitir una orden de compra.
+   * Reserva contablemente el capital asignado al emitir una orden de compra.
+   * Permite operaciones concurrentes adaptando la base contable.
    * @param {string} positionId
    * @param {number} amount
    */
@@ -86,14 +77,15 @@ class CapitalManagerService {
 
     this.deployedCapital = parseFloat((this.deployedCapital + cleanAmount).toFixed(2));
     this.availableCash = parseFloat(Math.max(0, this.availableCash - cleanAmount).toFixed(2));
+    this.totalCapital = parseFloat((this.availableCash + this.deployedCapital).toFixed(2));
     this.reservations.set(positionId, cleanAmount);
 
-    console.info(`🔒 [CAPITAL] Reservados $${cleanAmount} USD para ${positionId}. Disponible restante: $${this.availableCash} USD.`);
+    console.info(`💼 [CAPITAL FLEXIBLE] Reservados $${cleanAmount} USD para ${positionId}. Desplegado: $${this.deployedCapital} USD.`);
   }
 
   /**
-   * Libera capital tras la salida de una posición (Take-Profit o Stop-Loss),
-   * rotando los fondos y reintegrando el P&L realizado al pool líquido.
+   * Libera capital tras el cierre de una posición (Take-Profit o Stop-Loss),
+   * reintegrando el valor liquidado a la liquidez contable.
    * @param {string} positionId
    * @param {number} returnedAmount - Valor recuperado al cierre de la posición
    */
@@ -107,7 +99,7 @@ class CapitalManagerService {
     this.reservations.delete(positionId);
 
     const netChange = parseFloat((cleanReturned - original).toFixed(2));
-    console.info(`🔄 [CAPITAL ROTACIÓN] Liberados $${cleanReturned} USD de ${positionId} (Neto: ${netChange >= 0 ? '+' : ''}$${netChange}). Disponible para rotar: $${this.availableCash} USD.`);
+    console.info(`🔄 [CAPITAL LIQUIDACIÓN] Liberados $${cleanReturned} USD de ${positionId} (Neto: ${netChange >= 0 ? '+' : ''}$${netChange}). Disponible: $${this.availableCash} USD.`);
 
     return {
       totalCapital: this.totalCapital,
@@ -118,7 +110,7 @@ class CapitalManagerService {
   }
 
   /**
-   * Sincroniza el gestor de capital con los balances reales del broker (Happi/Manual).
+   * Sincroniza el gestor con los balances reales del broker (Happi/Manual).
    * @param {object} account
    */
   syncWithBrokerBalance(account) {

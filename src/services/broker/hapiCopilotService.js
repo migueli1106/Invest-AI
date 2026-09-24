@@ -5,7 +5,7 @@ import { telegramService } from '../telegramService.js';
 /**
  * 📱 [INVEST AI] Servicio Co-Piloto Asistido para Happi Broker (Opción A)
  * Genera deep-links contextuales, tarjetas interactivas de Telegram y asegura
- * la reserva del capital bajo el protocolo estricto ZERO_REFUND_STRICT.
+ * la ejecución multi-posición bajo el modelo Capital Flexible (FLEXIBLE_CAPITAL).
  */
 class HapiCopilotService {
   constructor() {
@@ -47,7 +47,7 @@ class HapiCopilotService {
       `• *Order Reference:* \`${orderId}\``,
       ``,
       `📱 Pulsa el botón abajo para confirmar en Happi:`,
-      `_Capital asegurado bajo protocolo ZERO_REFUND_STRICT._`,
+      `_Ejecución soberana bajo protocolo FLEXIBLE_CAPITAL._`,
     ].join('\n');
 
     const inlineKeyboard = [

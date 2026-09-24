@@ -83,19 +83,22 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     assert.equal(cap.deployedCapital, 35.00);
   });
 
-  // 3. Regla de CERO RE-FONDEO ($35 USD)
-  it('Debe bloquear la orden si el capital líquido libre es insuficiente (< $1 USD)', async () => {
-    // Agotar capital reservando $35
+  // 3. Capital Flexible Multi-Posición: Ejecución fluida sin bloqueos
+  it('Debe permitir ejecutar órdenes consecutivas para múltiples activos sin bloquear por pool agotado', async () => {
+    // Reservar $35 para una primera orden
     capitalManagerService.reserveCapital('ord_prev', 35.00);
 
     const res = await executionBridge.executeOrder({
       symbol: 'NVDA',
       currentPrice: 120.00,
+      side: 'BUY',
     });
 
-    assert.equal(res.success, false);
-    assert.equal(res.blocked, true);
-    assert.equal(res.reason, 'INSUFFICIENT_POOL_WAIT_ROTATION');
+    assert.equal(res.success, true);
+    assert.equal(res.symbol, 'NVDA');
+    assert.equal(res.mode, 'COPILOT');
+    assert.equal(capitalManagerService.getCapitalStatus().policy, 'FLEXIBLE_CAPITAL');
+    assert.equal(executionBridge.getBrokerSummary().capital.policy, 'FLEXIBLE_CAPITAL');
   });
 
   // 4. Opción B: Adaptador de Bridge Local (Queue & TTL)
