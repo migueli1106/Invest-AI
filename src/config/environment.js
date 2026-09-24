@@ -36,6 +36,10 @@ const EnvironmentSchema = z.object({
   // Cloud Scheduler & Automatización Segura
   CRON_SECRET: z.string().default('invest_ai_cron_internal_secret'),
 
+  // Broker Execution Bridge (Co-Piloto Asistido vs Local Agent)
+  EXECUTION_MODE: z.enum(['COPILOT', 'LOCAL_AGENT']).default('COPILOT'),
+  BRIDGE_SECRET: z.string().default('invest_ai_bridge_internal_secret'),
+
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });
 

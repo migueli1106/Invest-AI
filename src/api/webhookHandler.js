@@ -5,6 +5,7 @@ import { twilioService } from '../services/twilioService.js';
 import { telegramService } from '../services/telegramService.js';
 import { capitalManagerService } from '../services/capitalManagerService.js';
 import { portfolioService } from '../services/portfolioService.js';
+import { executionBridge } from '../services/broker/executionBridge.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
@@ -100,51 +101,28 @@ class WebhookHandler {
           const takeProfitPrice = signal?.targetPrice || currentPrice * 1.10;
           const stopLossPrice = signal?.stopLoss || currentPrice * 0.95;
 
-          // Regla Cero Re-Fondeo: Dimensionamiento fraccionario con tope de $35 USD
-          const sizing = capitalManagerService.calculateFractionalSizing(symbol, currentPrice, 35.00);
-
-          if (!sizing.allowed) {
-            const warnMsg = `⚠️ *¡CAPITAL 100% DESPLEGADO ($35.00 USD)!*\n\nNo es posible abrir *${symbol}* bajo la regla de CERO RE-FONDEO.\nEl capital rotará automáticamente al cerrarse una posición en Take-Profit o Stop-Loss.`;
-            if (chatId) await telegramService.sendMessage(chatId, warnMsg);
-            return { status: 200, result: { action: 'BLOCKED_ZERO_REFUND', symbol, reason: sizing.reason } };
-          }
-
-          // Co-Piloto Hapi Asistido (Opción A): Reserva de Capital y Registro en Portafolio
-          const orderId = `hapi_${symbol.toLowerCase()}_${Date.now()}`;
-
-          capitalManagerService.reserveCapital(orderId, sizing.notional);
-          await portfolioService.addPosition({
+          // Orquestador Desacoplado: Execution Bridge (Co-Piloto o Local Agent)
+          const executionResult = await executionBridge.executeOrder({
             symbol,
-            shares: sizing.qty,
-            buyPrice: currentPrice,
-            broker: 'Happi',
+            currentPrice,
             stopLoss: stopLossPrice,
             targetPrice: takeProfitPrice,
+            side: 'BUY',
+            chatId,
           });
 
+          if (!executionResult.success && executionResult.blocked) {
+            const warnMsg = `⚠️ *¡CAPITAL 100% DESPLEGADO ($35.00 USD)!*\n\nNo es posible abrir *${symbol}* bajo la regla de CERO RE-FONDEO.\nEl capital rotará automáticamente al cerrarse una posición en Take-Profit o Stop-Loss.`;
+            if (chatId) await telegramService.sendMessage(chatId, warnMsg);
+            return { status: 200, result: { action: 'BLOCKED_ZERO_REFUND', symbol, reason: executionResult.reason } };
+          }
+
+          const orderId = executionResult.orderId || executionResult.bridgeOrderId;
           if (options.updateDb) {
             await this.updateSignalStatus(symbol, 'APPROVED', String(from?.id || 'telegram'), orderId);
           }
 
-          if (chatId) {
-            const hapiAppUrl = 'https://app.hapi.trade/';
-            const confirmMsg = [
-              `🚀 *¡OPERACIÓN APROBADA POR MIGUEL JIMENEZ!*`,
-              ``,
-              `Capital reservado en el pool ($35 USD) y activo registrado para *${symbol}*.`,
-              `• Inversión Nocional: $${sizing.notional.toFixed(2)} USD`,
-              `• Cantidad Fraccionada Estimada: ${sizing.qty} acc.`,
-              `• Target Take-Profit: $${takeProfitPrice.toFixed(2)}`,
-              `• Stop-Loss Protección: $${stopLossPrice.toFixed(2)}`,
-              `• Reference ID: \`${orderId}\``,
-              ``,
-              `📱 Abre Happi para confirmar la orden: [Ir a Happi](${hapiAppUrl})`,
-              `_Capital protegido bajo protocolo ZERO_REFUND_STRICT._`,
-            ].join('\n');
-            await telegramService.sendMessage(chatId, confirmMsg);
-          }
-
-          return { status: 200, result: { action: 'APPROVED', symbol, orderId, executed: true } };
+          return { status: 200, result: { action: 'APPROVED', symbol, orderId, executed: true, mode: executionResult.mode } };
 
         } else if (data.startsWith('reject_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';

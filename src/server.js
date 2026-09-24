@@ -11,6 +11,8 @@ import { portfolioService } from './services/portfolioService.js';
 import { schedulerService } from './services/schedulerService.js';
 import { capitalManagerService } from './services/capitalManagerService.js';
 import { reportingService } from './services/reportingService.js';
+import { localBridgeService } from './services/broker/localBridgeService.js';
+import { executionBridge } from './services/broker/executionBridge.js';
 
 /**
  * 🌐 [INVEST AI] Servidor HTTP Autónomo para Google Cloud Run
@@ -18,13 +20,9 @@ import { reportingService } from './services/reportingService.js';
  */
 
 const MIME_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
 };
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
@@ -65,6 +63,11 @@ function isCronAuthorized(req) {
   const cronSecret = req.headers['x-cron-secret'];
   const isCloudScheduler = req.headers['x-cloudscheduler'] === 'true';
   return isCloudScheduler || (Boolean(cronSecret) && cronSecret === env.CRON_SECRET);
+}
+
+function isBridgeAuthorized(req) {
+  const bridgeSecret = req.headers['x-bridge-secret'];
+  return Boolean(bridgeSecret) && bridgeSecret === env.BRIDGE_SECRET;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -215,6 +218,47 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: err.message }));
     }
+    return;
+  }
+
+  // 11. Bridge Local: Consultar Órdenes Pendientes (GET /api/bridge/pending)
+  if (method === 'GET' && url.pathname === '/api/bridge/pending') {
+    if (!isBridgeAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing bridge secret' }));
+      return;
+    }
+    const orders = localBridgeService.getPendingOrders();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, count: orders.length, orders }));
+    return;
+  }
+
+  // 12. Bridge Local: Reportar Ejecución Completada (POST /api/bridge/complete)
+  if (method === 'POST' && url.pathname === '/api/bridge/complete') {
+    if (!isBridgeAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing bridge secret' }));
+      return;
+    }
+    try {
+      const raw = await readRequestBody(req);
+      const payload = JSON.parse(raw || '{}');
+      const { bridgeOrderId, fillPrice, executedShares, status, notes } = payload;
+      const result = await localBridgeService.completeOrder(bridgeOrderId, { fillPrice, executedShares, status, notes });
+      res.writeHead(result.success ? 200 : 400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 13. Resumen Unificado del Broker / Execution Bridge (GET /api/broker/summary)
+  if (method === 'GET' && url.pathname === '/api/broker/summary') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, summary: executionBridge.getBrokerSummary() }));
     return;
   }
 
