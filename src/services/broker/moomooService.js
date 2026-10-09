@@ -69,11 +69,32 @@ export class MoomooService {
         }
 
         try {
-          const match = stdout.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-          if (!match) {
+          let parsed = null;
+          const lines = stdout.split('\n');
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if ((line.startsWith('{') && line.endsWith('}')) || (line.startsWith('[') && line.endsWith(']'))) {
+              try {
+                parsed = JSON.parse(line);
+                break;
+              } catch {
+                // Ignore and keep searching
+              }
+            }
+          }
+
+          if (!parsed) {
+            const firstBrace = stdout.indexOf('{');
+            const lastBrace = stdout.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace > firstBrace) {
+              parsed = JSON.parse(stdout.slice(firstBrace, lastBrace + 1));
+            }
+          }
+
+          if (!parsed) {
             throw new Error(`Salida JSON no detectada en stdout: ${stdout || stderr}`);
           }
-          const parsed = JSON.parse(match[0]);
+
           resolve(parsed);
         } catch (parseErr) {
           reject(new Error(`Error parseando JSON de ${subPath}: ${parseErr.message} (Output: ${stdout})`));
