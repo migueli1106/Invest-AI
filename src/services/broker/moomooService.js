@@ -1,6 +1,12 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from '../../config/environment.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEFAULT_SCRIPTS_DIR = path.join(__dirname, 'moomoo_scripts');
+const DEFAULT_PYTHON_BIN = process.platform === 'win32' ? 'python' : 'python3';
 
 /**
  * 🐮 [INVEST AI] Adaptador Oficial de Moomoo OpenAPI & OpenD Gateway
@@ -12,8 +18,8 @@ export class MoomooService {
     this.brokerName = 'Moomoo';
     this.accId = options.accId || process.env.MOOMOO_ACC_ID || env.MOOMOO_ACC_ID || '2886044';
     this.trdEnv = (options.trdEnv || process.env.MOOMOO_TRD_ENV || env.MOOMOO_TRD_ENV || 'SIMULATE').toUpperCase();
-    this.scriptsDir = options.scriptsDir || process.env.MOOMOO_SCRIPTS_DIR || env.MOOMOO_SCRIPTS_DIR || 'C:\\Users\\sebas\\.gemini\\config\\skills\\moomooapi\\scripts';
-    this.pythonBin = options.pythonBin || process.env.PYTHON_BIN || 'python';
+    this.scriptsDir = options.scriptsDir || process.env.MOOMOO_SCRIPTS_DIR || env.MOOMOO_SCRIPTS_DIR || DEFAULT_SCRIPTS_DIR;
+    this.pythonBin = options.pythonBin || process.env.PYTHON_BIN || DEFAULT_PYTHON_BIN;
     this.forceSimulation = options.forceSimulation !== undefined ? options.forceSimulation : false;
   }
 

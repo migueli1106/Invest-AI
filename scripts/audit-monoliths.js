@@ -20,6 +20,7 @@ const dirsToScan = ['src', 'server', 'lib', 'app', 'services', 'api'];
 // 🛡️ 1. Techos específicos por archivo con cohesión autorizada
 export const DOMAIN_CEILINGS = {
   'src/server.js': { max: 450, reason: 'Servidor HTTP central y router de API Cloud Run' },
+  'src/services/broker/moomoo_scripts/common.py': { max: 1250, reason: 'Utilidad oficial compartida del SDK Moomoo OpenAPI' },
 };
 
 // 🛡️ 2. Techos Idiomáticos por Defecto según Capa Arquitectónica
