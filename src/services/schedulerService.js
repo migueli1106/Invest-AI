@@ -67,7 +67,11 @@ class SchedulerService {
    * @param {string|number} [chatId] - Chat ID destino para alertas
    */
   async runAutonomousMarketScan(
-    watchlist = ['AAPL', 'NVDA', 'MSFT', 'SPY', 'QQQ'],
+    watchlist = [
+      'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'AMD',
+      'AVGO', 'PLTR', 'ARM', 'SMH', 'SPY', 'QQQ', 'IWM', 'SMCI',
+      'COIN', 'UBER', 'BRK-B', 'JPM'
+    ],
     forceMarketOpen = false,
     chatId = null
   ) {

@@ -2,23 +2,27 @@ import { env } from '../../config/environment.js';
 import { capitalManagerService } from '../capitalManagerService.js';
 import { hapiCopilotService } from './hapiCopilotService.js';
 import { localBridgeService } from './localBridgeService.js';
+import { moomooService } from './moomooService.js';
 
 /**
  * 🎯 [INVEST AI] Orquestador Unificado de Ejecución de Broker (Execution Bridge)
  * Implementa el patrón Strategy para coordinar la ejecución entre:
- * - Opción A: Hapi Copilot Asistido (Cloud Run)
- * - Opción B: Local Automation Bridge (Worker Residencial)
+ * - MOOMOO: Moomoo OpenAPI & OpenD Gateway (Oficial de Producción / Simulación)
+ * - COPILOT: Hapi Copilot Asistido (Cloud Run Deep-links)
+ * - LOCAL_AGENT: Local Automation Bridge (Worker Residencial)
  * 
  * Opera bajo la política institucional de Capital Flexible Multi-Posición (FLEXIBLE_CAPITAL).
  */
 class ExecutionBridge {
   constructor() {
-    this.brokerName = 'Happi';
-    this.mode = (process.env.EXECUTION_MODE || env.EXECUTION_MODE || 'COPILOT').toUpperCase();
     this.strategies = {
+      MOOMOO: moomooService,
       COPILOT: hapiCopilotService,
       LOCAL_AGENT: localBridgeService,
     };
+    this.mode = (process.env.EXECUTION_MODE || env.EXECUTION_MODE || 'MOOMOO').toUpperCase();
+    if (!this.strategies[this.mode]) this.mode = 'MOOMOO';
+    this.brokerName = this.mode === 'MOOMOO' ? 'Moomoo' : 'Happi';
   }
 
   /**
@@ -30,15 +34,16 @@ class ExecutionBridge {
 
   /**
    * Permite conmutar el modo de ejecución dinámicamente o durante tests.
-   * @param {'COPILOT' | 'LOCAL_AGENT'} mode
+   * @param {'MOOMOO' | 'COPILOT' | 'LOCAL_AGENT'} mode
    */
   setExecutionMode(mode) {
     const norm = (mode || '').toUpperCase();
     if (!this.strategies[norm]) {
-      throw new Error(`Modo de ejecución no reconocido: ${mode}. Opciones válidas: COPILOT, LOCAL_AGENT`);
+      throw new Error(`Modo de ejecución no reconocido: ${mode}. Opciones válidas: MOOMOO, COPILOT, LOCAL_AGENT`);
     }
     this.mode = norm;
-    console.info(`🔄 [EXECUTION BRIDGE] Modo de ejecución cambiado a: ${this.mode}`);
+    this.brokerName = norm === 'MOOMOO' ? 'Moomoo' : 'Happi';
+    console.info(`🔄 [EXECUTION BRIDGE] Modo de ejecución cambiado a: ${this.mode} (Broker: ${this.brokerName})`);
     return this.mode;
   }
 
@@ -82,6 +87,22 @@ class ExecutionBridge {
     };
 
     // Despacho según el modo de ejecución activo (Strategy)
+    if (this.mode === 'MOOMOO') {
+      const mooRes = await this.strategies.MOOMOO.executeOrder({
+        symbol: sym,
+        qty: effectiveQty,
+        price,
+        side,
+        trdEnv: env.MOOMOO_TRD_ENV || 'SIMULATE',
+      });
+      return {
+        success: true,
+        mode: 'MOOMOO',
+        broker: this.brokerName,
+        ...mooRes,
+      };
+    }
+
     if (this.mode === 'LOCAL_AGENT') {
       const bridgeResult = this.strategies.LOCAL_AGENT.queueOrder(orderPayload);
       return {
@@ -97,7 +118,7 @@ class ExecutionBridge {
       };
     }
 
-    // Default: COPILOT (Opción A)
+    // Default fallback: COPILOT (Opción A)
     const copilotResult = await this.strategies.COPILOT.executeOrder(orderPayload);
     return {
       success: true,
@@ -108,7 +129,7 @@ class ExecutionBridge {
   }
 
   /**
-   * Retorna métricas unificadas del broker activo (Happi) y estado de la cola.
+   * Retorna métricas unificadas del broker activo y estado de la cola.
    */
   getBrokerSummary() {
     const capital = capitalManagerService.getCapitalStatus();
@@ -117,6 +138,7 @@ class ExecutionBridge {
     return {
       broker: this.brokerName,
       executionMode: this.mode,
+      trdEnv: env.MOOMOO_TRD_ENV || 'SIMULATE',
       status: 'OPERATIONAL',
       capital,
       localBridge: {

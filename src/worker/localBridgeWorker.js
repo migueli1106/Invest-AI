@@ -1,10 +1,10 @@
 import { env } from '../config/environment.js';
-import { hapiBrowserAutomation } from './hapiBrowserAutomation.js';
+import { moomooService } from '../services/broker/moomooService.js';
 
 /**
- * 🛰️ [INVEST AI] Daemon Worker de Automatización Residencial (Opción B)
- * Sondea periódicamente a Cloud Run, ejecuta órdenes pendientes en la web de Happi
- * y reporta la confirmación garantizando la liberación de capital ante fallos.
+ * 🛰️ [INVEST AI] Daemon Worker Residencial para Moomoo OpenD
+ * Sondea periódicamente a Cloud Run (/api/bridge/pending) y despacha
+ * las órdenes directamente mediante Moomoo OpenD Gateway, reportando el fill.
  */
 class LocalBridgeWorker {
   constructor(options = {}) {
@@ -91,7 +91,7 @@ class LocalBridgeWorker {
     try {
       const pendingOrders = await this.fetchPendingOrders();
       if (pendingOrders.length > 0) {
-        console.info(`📬 [WORKER] Detectadas ${pendingOrders.length} orden(es) pendiente(s) en Cloud Run.`);
+        console.info(`📬 [WORKER MOOMOO] Detectadas ${pendingOrders.length} orden(es) pendiente(s) en Cloud Run.`);
       }
 
       for (const order of pendingOrders) {
@@ -105,25 +105,37 @@ class LocalBridgeWorker {
   }
 
   /**
-   * Procesa una orden individual: automatiza la compra y reporta el resultado.
+   * Procesa una orden individual enviándola directamente a Moomoo OpenD.
    * Regla FLEXIBLE_CAPITAL: ante cualquier fallo, cancela y concilia fondos de inmediato.
    */
   async handleSingleOrder(order) {
-    const { bridgeOrderId, symbol, notional } = order;
-    console.info(`⚡ [WORKER] Procesando orden ${bridgeOrderId} para ${symbol} ($${notional} USD)...`);
+    const { bridgeOrderId, symbol, notional, currentPrice, side, qty } = order;
+    console.info(`⚡ [WORKER MOOMOO] Procesando orden ${bridgeOrderId} para ${symbol} ($${notional} USD)...`);
 
     try {
-      const execution = await hapiBrowserAutomation.executeBuy(order, { dryRun: this.dryRun });
+      const cleanQty = qty || (notional && currentPrice ? Math.max(1, Math.round(notional / currentPrice)) : 1);
+      const execution = await moomooService.executeOrder({
+        symbol,
+        qty: cleanQty,
+        price: currentPrice || 100.0,
+        side: side || 'BUY',
+        trdEnv: this.dryRun ? 'SIMULATE' : (env.MOOMOO_TRD_ENV || 'SIMULATE'),
+      });
+
+      const fillPrice = execution.price || currentPrice || 100.0;
+      const executedShares = execution.qty || cleanQty;
+      const orderId = execution.orderId || `moo_${Date.now()}`;
 
       await this.reportCompletion({
         bridgeOrderId,
-        fillPrice: execution.fillPrice,
-        executedShares: execution.executedShares,
+        fillPrice,
+        executedShares,
         status: 'FILLED',
-        notes: this.dryRun ? 'Completada en modo simulado (--dry-run)' : 'Ejecutada en Happi web',
+        orderId,
+        notes: `Ejecutado oficialmente en Moomoo OpenD (Order ID: ${orderId})`,
       });
 
-      console.info(`🎉 [WORKER] Orden ${bridgeOrderId} completada y confirmada en Cloud Run.`);
+      console.info(`🎉 [WORKER MOOMOO] Orden ${bridgeOrderId} completada en OpenD (ID: ${orderId}, Fill: $${fillPrice}).`);
     } catch (err) {
       console.error(`💥 [WORKER ERROR] Falló orden ${bridgeOrderId}: ${err.message}`);
 
@@ -132,7 +144,7 @@ class LocalBridgeWorker {
         await this.reportCompletion({
           bridgeOrderId,
           status: 'CANCELLED',
-          notes: `Fallo en automatización local: ${err.message}. Fondos liberados.`,
+          notes: `Fallo en Moomoo OpenD: ${err.message}. Fondos liberados.`,
         });
         console.info(`🔒 [WORKER] Fondos ($${notional} USD) liberados en Cloud Run para ${bridgeOrderId}.`);
       } catch (reportErr) {
@@ -147,10 +159,10 @@ class LocalBridgeWorker {
   start() {
     this.parseCliArgs();
     this.isRunning = true;
-    console.info('🚀 [INVEST AI] Worker Local de Automatización Residencial iniciado.');
+    console.info('🚀 [INVEST AI] Worker Local Residencial para Moomoo OpenD iniciado.');
     console.info(`   • Destino Cloud Run: ${this.cloudRunUrl}`);
     console.info(`   • Frecuencia de Sondeo: ${this.intervalMs}ms`);
-    console.info(`   • Modo: ${this.dryRun ? 'DRY-RUN (Simulado)' : 'LIVE (Happi Real)'}`);
+    console.info(`   • Modo: ${this.dryRun ? 'DRY-RUN (Simulado)' : 'LIVE (Moomoo OpenD)'}`);
 
     this.timerHandle = setInterval(() => {
       this.processPendingCycle();
@@ -168,7 +180,7 @@ class LocalBridgeWorker {
       clearInterval(this.timerHandle);
       this.timerHandle = null;
     }
-    console.info('🛑 [INVEST AI] Worker Local de Automatización detenido.');
+    console.info('🛑 [INVEST AI] Worker Local Residencial detenido.');
   }
 }
 

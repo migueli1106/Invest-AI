@@ -17,7 +17,7 @@ const EnvironmentSchema = z.object({
   GCS_BUCKET_NAME: z.string().default('invest_ia'),
   GCS_REPORTS_PREFIX: z.string().default('reports/'),
   GCS_MEDIA_PREFIX: z.string().default('media/'),
-  PRIMARY_BROKER: z.string().default('Happi'),
+  PRIMARY_BROKER: z.string().default('Moomoo'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
 
@@ -36,14 +36,22 @@ const EnvironmentSchema = z.object({
   // Cloud Scheduler & Automatización Segura
   CRON_SECRET: z.string().default('invest_ai_cron_internal_secret'),
 
-  // Broker Execution Bridge (Co-Piloto Asistido vs Local Agent)
-  EXECUTION_MODE: z.string().default('COPILOT').transform((val) => {
+  // Broker Execution Bridge (MOOMOO | COPILOT | LOCAL_AGENT)
+  EXECUTION_MODE: z.string().default('MOOMOO').transform((val) => {
     const norm = (val || '').trim().toUpperCase();
-    return norm === 'LOCAL_AGENT' ? 'LOCAL_AGENT' : 'COPILOT';
+    if (norm === 'LOCAL_AGENT' || norm === 'COPILOT') return norm;
+    return 'MOOMOO';
   }),
   BRIDGE_SECRET: z.string().default('invest_ai_bridge_internal_secret'),
 
-  // Worker Residencial de Automatización Local (Opción B)
+  // Moomoo OpenAPI & Gateway OpenD
+  MOOMOO_ACC_ID: z.string().default('2886044'),
+  MOOMOO_TRD_ENV: z.enum(['SIMULATE', 'REAL']).default('SIMULATE'),
+  MOOMOO_OPEND_HOST: z.string().default('127.0.0.1'),
+  MOOMOO_OPEND_PORT: z.coerce.number().default(11111),
+  MOOMOO_SCRIPTS_DIR: z.string().default('C:\\Users\\sebas\\.gemini\\config\\skills\\moomooapi\\scripts'),
+
+  // Worker Residencial de Automatización Local
   CLOUD_RUN_URL: z.string().default('https://invest-ai-engine-891662254338.us-central1.run.app'),
   LOCAL_CHROME_PATH: z.string().optional(),
   LOCAL_CHROME_PROFILE_DIR: z.string().default('./.hapi-profile'),

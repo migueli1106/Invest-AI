@@ -5,6 +5,7 @@ import { server } from '../../src/server.js';
 import { env } from '../../src/config/environment.js';
 import { localBridgeWorker } from '../../src/worker/localBridgeWorker.js';
 import { hapiBrowserAutomation } from '../../src/worker/hapiBrowserAutomation.js';
+import { moomooService } from '../../src/services/broker/moomooService.js';
 import { localBridgeService } from '../../src/services/broker/localBridgeService.js';
 import { capitalManagerService } from '../../src/services/capitalManagerService.js';
 
@@ -122,10 +123,10 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
     // Capital preventivo reservado ($0 disponible)
     assert.equal(capitalManagerService.getCapitalStatus().availableCash, 0.00);
 
-    // Forzar fallo simulando excepción en executeBuy
-    const originalExecute = hapiBrowserAutomation.executeBuy;
-    hapiBrowserAutomation.executeBuy = async () => {
-      throw new Error('Timeout al esperar selector de confirmación de Happi');
+    // Forzar fallo simulando excepción en moomooService.executeOrder
+    const originalExecute = moomooService.executeOrder;
+    moomooService.executeOrder = async () => {
+      throw new Error('Timeout al esperar respuesta de Moomoo OpenD');
     };
 
     try {
@@ -141,7 +142,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
       assert.equal(cap.availableCash, 35.00);
       assert.equal(cap.deployedCapital, 0.00);
     } finally {
-      hapiBrowserAutomation.executeBuy = originalExecute;
+      moomooService.executeOrder = originalExecute;
     }
   });
 
