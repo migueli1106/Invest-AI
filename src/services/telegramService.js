@@ -120,6 +120,49 @@ class TelegramService {
   }
 
   /**
+   * Envía un digest consolidado de oportunidades intradía evitando spam de alertas.
+   * @param {string|number} [chatId] - ID de chat destino
+   * @param {object[]} signals - Array de señales de alta probabilidad
+   */
+  async sendConsolidatedDigest(chatId, signals = []) {
+    const targetChatId = chatId || env.TELEGRAM_CHAT_ID;
+    if (!signals.length) return null;
+
+    const listLines = signals.map((s) => {
+      const act = s.action === 'BUY' ? '🟢 BUY' : (s.action === 'SELL' ? '🔴 SELL' : '🟡 HOLD');
+      return `• *${s.symbol}* (${act}) | Conf: *${s.confidence}%* | R/B: *${s.riskRewardRatio.toFixed(1)}:1*\n  Entrada: $${s.entryPrice.toFixed(2)} | Target: $${s.targetPrice.toFixed(2)} | SL: $${s.stopLoss.toFixed(2)}`;
+    }).join('\n\n');
+
+    const messageText = [
+      `⚡ *INVEST AI — DIGEST DE OPORTUNIDADES INTRADÍA*`,
+      ``,
+      `Se detectaron *${signals.length}* señales con alta probabilidad estadística:`,
+      ``,
+      listLines,
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      `👇 *Autoriza todo el lote o selecciona activos individuales:*`,
+    ].join('\n');
+
+    const symbolsJoined = signals.map((s) => s.symbol).join(',');
+    const batchData = `batch_approve_${symbolsJoined}`.slice(0, 64);
+
+    const inlineKeyboard = [
+      [{ text: `🚀 APROBAR TODAS (${signals.length})`, callback_data: batchData }],
+      ...signals.map((s) => [
+        { text: `✅ ${s.symbol}`, callback_data: `approve_${s.symbol}_${Date.now()}` },
+        { text: `❌ ${s.symbol}`, callback_data: `reject_${s.symbol}_${Date.now()}` },
+      ]),
+      [{ text: '❌ DESCARTAR TODAS', callback_data: 'batch_reject' }],
+    ];
+
+    return await this.sendMessage(targetChatId, messageText, {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: inlineKeyboard },
+    });
+  }
+
+  /**
    * Confirma a los servidores de Telegram la recepción del clic en un botón callback.
    * @param {string} callbackQueryId - ID de la consulta del callback
    * @param {string} text - Notificación breve tipo toast para el usuario

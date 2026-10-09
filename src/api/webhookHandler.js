@@ -6,6 +6,7 @@ import { telegramService } from '../services/telegramService.js';
 import { capitalManagerService } from '../services/capitalManagerService.js';
 import { portfolioService } from '../services/portfolioService.js';
 import { executionBridge } from '../services/broker/executionBridge.js';
+import { systemConfigService } from '../services/systemConfigService.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
@@ -92,7 +93,35 @@ class WebhookHandler {
 
         console.info(`📬 [TELEGRAM CLICK] De ${from?.first_name || from?.id}: '${data}' (ID: ${callbackQueryId})`);
 
-        if (data.startsWith('approve_')) {
+        if (data.startsWith('batch_approve_')) {
+          const symbols = data.slice('batch_approve_'.length).split(',').filter(Boolean);
+          await telegramService.answerCallbackQuery(callbackQueryId, `Ejecutando lote (${symbols.length})...`).catch(() => {});
+          const results = [];
+          for (const sym of symbols) {
+            const signal = await this.findSignal(sym);
+            const currentPrice = signal?.entryPrice || 100.00;
+            const exec = await executionBridge.executeOrder({
+              symbol: sym,
+              currentPrice,
+              stopLoss: signal?.stopLoss || currentPrice * 0.95,
+              targetPrice: signal?.targetPrice || currentPrice * 1.10,
+              side: 'BUY',
+              chatId,
+            });
+            const orderId = exec.orderId || exec.bridgeOrderId;
+            if (options.updateDb) await this.updateSignalStatus(sym, 'APPROVED', String(from?.id || 'telegram'), orderId);
+            results.push({ symbol: sym, orderId, success: exec.success !== false });
+          }
+          if (chatId) {
+            const summary = results.map((r) => `• *${r.symbol}*: ${r.success ? '✅ Enviada a Moomoo' : '⚠️ Falló'}`).join('\n');
+            await telegramService.sendMessage(chatId, `🚀 *¡LOTE EJECUTADO CON ÉXITO!*\n\n${summary}`);
+          }
+          return { status: 200, result: { action: 'BATCH_APPROVED', symbols, count: results.length } };
+        } else if (data === 'batch_reject' || data.startsWith('batch_reject')) {
+          await telegramService.answerCallbackQuery(callbackQueryId, 'Oportunidades descartadas').catch(() => {});
+          if (chatId) await telegramService.sendMessage(chatId, `❌ *LOTE DESCARTADO*\n\nLas oportunidades del digest han sido descartadas.`);
+          return { status: 200, result: { action: 'BATCH_REJECTED' } };
+        } else if (data.startsWith('approve_')) {
           const symbol = data.split('_')[1] || 'ACTIVO';
           await telegramService.answerCallbackQuery(callbackQueryId, 'Procesando ejecución...').catch(() => {});
 
@@ -131,9 +160,19 @@ class WebhookHandler {
         const text = update.message.text.trim();
         const chatId = update.message.chat?.id;
 
-        if (text.startsWith('/status') || text.startsWith('/estado')) {
+        if (text.startsWith('/autoinvest')) {
+          const newState = await systemConfigService.toggleAutoInvest();
+          const statusText = newState ? '🟢 *ACTIVADO*' : '🔴 *DESACTIVADO*';
+          const msg = `⚡ *INVEST AI — MODO AUTO INVEST*\n\nEstado actual: ${statusText}\n\n` +
+            (newState
+              ? 'Las señales se ejecutarán 100% automáticamente en Moomoo OpenD.'
+              : 'Modo Co-Piloto activo. Recibirás digests para autorizar cada operación.');
+          if (chatId) await telegramService.sendMessage(chatId, msg);
+          return { status: 200, result: { action: 'AUTOINVEST_TOGGLE', autoInvestEnabled: newState } };
+        } else if (text.startsWith('/status') || text.startsWith('/estado')) {
           const cap = capitalManagerService.getCapitalStatus();
-          const msg = `🤖 *Invest AI Status:*\nMotor activo en Google Cloud Run.\n💰 Pool: $${cap.totalCapital} | Libre: $${cap.availableCash} | Invertido: $${cap.deployedCapital}`;
+          const modeStr = systemConfigService.isAutoInvestEnabled() ? '🟢 Auto-Invest (ON)' : '⚪ Co-Piloto (MANUAL)';
+          const msg = `🤖 *Invest AI Status:*\nMotor activo en Google Cloud Run.\n⚡ Modo: ${modeStr}\n💰 Pool: $${cap.totalCapital} | Libre: $${cap.availableCash} | Invertido: $${cap.deployedCapital}`;
           if (chatId) await telegramService.sendMessage(chatId, msg);
           return { status: 200, result: { action: 'STATUS', chatId } };
         } else if (text.startsWith('/start')) {
