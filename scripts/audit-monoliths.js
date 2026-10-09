@@ -19,7 +19,7 @@ const dirsToScan = ['src', 'server', 'lib', 'app', 'services', 'api'];
 
 // 🛡️ 1. Techos específicos por archivo con cohesión autorizada
 export const DOMAIN_CEILINGS = {
-  // 'src/services/marketAnalyzer.js': { max: 500, reason: 'Servicio central de análisis de fluctuaciones y señales' },
+  'src/server.js': { max: 450, reason: 'Servidor HTTP central y router de API Cloud Run' },
 };
 
 // 🛡️ 2. Techos Idiomáticos por Defecto según Capa Arquitectónica

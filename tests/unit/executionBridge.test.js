@@ -4,14 +4,12 @@ import assert from 'node:assert/strict';
 import { server } from '../../src/server.js';
 import { env } from '../../src/config/environment.js';
 import { executionBridge } from '../../src/services/broker/executionBridge.js';
-import { hapiCopilotService } from '../../src/services/broker/hapiCopilotService.js';
 import { localBridgeService } from '../../src/services/broker/localBridgeService.js';
 import { capitalManagerService } from '../../src/services/capitalManagerService.js';
 import { webhookHandler } from '../../src/api/webhookHandler.js';
 
 describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado', () => {
   let baseUrl;
-
   let origInfo;
   let origWarn;
 
@@ -38,7 +36,7 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
   after(async () => {
     console.info = origInfo;
     console.warn = origWarn;
-    executionBridge.setExecutionMode('COPILOT');
+    executionBridge.setExecutionMode('MOOMOO');
     localBridgeService.clear();
     capitalManagerService.reset(35.00);
     if (server.listening) {
@@ -49,20 +47,20 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
   beforeEach(() => {
     capitalManagerService.reset(35.00);
     localBridgeService.clear();
-    executionBridge.setExecutionMode('COPILOT');
+    executionBridge.setExecutionMode('MOOMOO');
   });
 
   // 1. Verificación del Orquestador y Patrón Strategy
-  it('Debe inicializar por defecto en modo COPILOT con Happi como broker', () => {
-    assert.equal(executionBridge.getExecutionMode(), 'COPILOT');
+  it('Debe inicializar por defecto en modo MOOMOO con Moomoo como broker', () => {
+    assert.equal(executionBridge.getExecutionMode(), 'MOOMOO');
     const summary = executionBridge.getBrokerSummary();
-    assert.equal(summary.broker, 'Happi');
-    assert.equal(summary.executionMode, 'COPILOT');
+    assert.equal(summary.broker, 'Moomoo');
+    assert.equal(summary.executionMode, 'MOOMOO');
     assert.equal(summary.capital.totalCapital, 35.00);
   });
 
-  // 2. Opción A: Hapi Copilot Asistido
-  it('Modo COPILOT: debe generar deep-links a Happi, reservar capital y confirmar orden', async () => {
+  // 2. Ejecución Nativa Directa con Moomoo OpenD
+  it('Modo MOOMOO: debe despachar orden oficial a OpenD y confirmar ejecución', async () => {
     const res = await executionBridge.executeOrder({
       symbol: 'MSFT',
       currentPrice: 400.00,
@@ -70,22 +68,14 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     });
 
     assert.equal(res.success, true);
-    assert.equal(res.mode, 'COPILOT');
-    assert.equal(res.broker, 'Happi');
+    assert.equal(res.mode, 'MOOMOO');
+    assert.equal(res.broker, 'Moomoo');
     assert.equal(res.symbol, 'MSFT');
-    assert.match(res.deepLink, /https:\/\/app\.hapi\.trade\/stock\/MSFT/);
-    assert.ok(res.card.message.includes('MSFT'));
-    assert.equal(res.card.inlineKeyboard[0][0].url, 'https://app.hapi.trade/stock/MSFT');
-
-    // Comprobar reserva de capital
-    const cap = capitalManagerService.getCapitalStatus();
-    assert.equal(cap.availableCash, 0.00);
-    assert.equal(cap.deployedCapital, 35.00);
+    assert.ok(res.orderId);
   });
 
-  // 3. Capital Flexible Multi-Posición: Ejecución fluida sin bloqueos
+  // 3. Capital Dinámico Multi-Posición: Ejecución fluida sin bloqueos
   it('Debe permitir ejecutar órdenes consecutivas para múltiples activos sin bloquear por pool agotado', async () => {
-    // Reservar $35 para una primera orden
     capitalManagerService.reserveCapital('ord_prev', 35.00);
 
     const res = await executionBridge.executeOrder({
@@ -96,12 +86,12 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
 
     assert.equal(res.success, true);
     assert.equal(res.symbol, 'NVDA');
-    assert.equal(res.mode, 'COPILOT');
+    assert.equal(res.mode, 'MOOMOO');
     assert.equal(capitalManagerService.getCapitalStatus().policy, 'FLEXIBLE_CAPITAL');
     assert.equal(executionBridge.getBrokerSummary().capital.policy, 'FLEXIBLE_CAPITAL');
   });
 
-  // 4. Opción B: Adaptador de Bridge Local (Queue & TTL)
+  // 4. Modo LOCAL_AGENT: Adaptador de Bridge Residencial (Queue & TTL)
   it('Modo LOCAL_AGENT: debe encolar la orden, reservar capital y asignar TTL de 5 minutos', async () => {
     executionBridge.setExecutionMode('LOCAL_AGENT');
     assert.equal(executionBridge.getExecutionMode(), 'LOCAL_AGENT');
@@ -109,6 +99,7 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     const res = await executionBridge.executeOrder({
       symbol: 'AAPL',
       currentPrice: 220.00,
+      notional: 35.00,
       side: 'BUY',
     });
 
@@ -121,13 +112,13 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     assert.equal(pending.length, 1);
     assert.equal(pending[0].symbol, 'AAPL');
     assert.equal(pending[0].notional, 35.00);
+    assert.equal(pending[0].broker, 'Moomoo');
 
-    // Capital reservado preventivamente
     const cap = capitalManagerService.getCapitalStatus();
     assert.equal(cap.availableCash, 0.00);
   });
 
-  it('Modo LOCAL_AGENT: completeOrder (FILLED) debe cerrar la orden y mantener portafolio', async () => {
+  it('Modo LOCAL_AGENT: completeOrder (FILLED) debe cerrar la orden y registrar posición', async () => {
     const queueRes = localBridgeService.queueOrder({
       symbol: 'GOOGL',
       qty: 0.2,
@@ -163,7 +154,7 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
 
     const cancelRes = await localBridgeService.completeOrder(queueRes.bridgeOrderId, {
       status: 'CANCELLED',
-      notes: 'Cancelado por usuario en broker',
+      notes: 'Cancelado en Moomoo',
     });
 
     assert.equal(cancelRes.success, true);
@@ -180,17 +171,16 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
       currentPrice: 190.00,
     });
 
-    // Simular paso del tiempo manipulando expiresAtMs
     const order = localBridgeService.getOrder(queueRes.bridgeOrderId);
-    order.expiresAtMs = Date.now() - 1000; // vencida hace 1 segundo
+    order.expiresAtMs = Date.now() - 1000;
 
     const pending = localBridgeService.getPendingOrders();
-    assert.equal(pending.length, 0); // purgada
+    assert.equal(pending.length, 0);
     assert.equal(order.status, 'EXPIRED');
     assert.equal(capitalManagerService.getCapitalStatus().availableCash, 35.00);
   });
 
-  // 5. Endpoints REST Seguros del Bridge Local
+  // 5. Endpoints REST Seguros del Bridge
   it('GET /api/bridge/pending debe rechazar con 401 si no hay X-Bridge-Secret', async () => {
     const res = await fetch(`${baseUrl}/api/bridge/pending`);
     assert.equal(res.status, 401);
@@ -242,19 +232,40 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     assert.equal(data.status, 'COMPLETED');
   });
 
+  it('POST /api/bridge/sync-balance debe calibrar el saldo de Cloud Run con Moomoo', async () => {
+    const res = await fetch(`${baseUrl}/api/bridge/sync-balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Bridge-Secret': env.BRIDGE_SECRET,
+      },
+      body: JSON.stringify({
+        cash: 850.00,
+        totalAssets: 2100.00,
+        buyingPower: 1700.00,
+      }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.success, true);
+    assert.equal(data.capital.availableCash, 850.00);
+    assert.equal(data.capital.totalCapital, 2100.00);
+    assert.equal(data.capital.broker, 'Moomoo');
+  });
+
   it('GET /api/broker/summary debe retornar estado unificado del broker y capital', async () => {
     const res = await fetch(`${baseUrl}/api/broker/summary`);
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.success, true);
-    assert.equal(data.summary.broker, 'Happi');
+    assert.equal(data.summary.broker, 'Moomoo');
   });
 
   // 6. Integración con Webhook de Telegram
   it('Webhook Telegram: callback approve_NVDA debe invocar executionBridge con éxito', async () => {
     const update = {
       callback_query: {
-        id: 'cq_test_phase12',
+        id: 'cq_test_phase16',
         from: { id: 123456, first_name: 'Miguel' },
         data: 'approve_NVDA',
         message: { chat: { id: 123456 } },

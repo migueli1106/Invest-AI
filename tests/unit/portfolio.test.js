@@ -15,7 +15,7 @@ describe('💼 Suite de Pruebas Unitarias: Gestión de Portafolio y Métricas P&
         averageBuyPrice: 100,
         totalCost: 1000,
         currentPrice: 125,
-        broker: 'Happi',
+        broker: 'Moomoo',
         status: 'OPEN',
         stopLoss: 95,
         targetPrice: 120,
@@ -50,7 +50,7 @@ describe('💼 Suite de Pruebas Unitarias: Gestión de Portafolio y Métricas P&
         averageBuyPrice: 150,
         totalCost: 750,
         currentPrice: 165, // Supera targetPrice de 160
-        broker: 'Happi',
+        broker: 'Moomoo',
         status: 'OPEN',
         stopLoss: 140,
         targetPrice: 160,
@@ -104,7 +104,7 @@ describe('💼 Suite de Pruebas Unitarias: Gestión de Portafolio y Métricas P&
       symbol: 'MSFT',
       shares: 10,
       buyPrice: 300,
-      broker: 'Happi',
+      broker: 'Moomoo',
       stopLoss: 285,
       targetPrice: 330,
     });

@@ -110,13 +110,10 @@ describe('🐮 Suite de Pruebas Unitarias: Moomoo OpenAPI & Execution Bridge', (
     assert.ok(execRes.orderId);
   });
 
-  it('Execution Bridge debe permitir conmutación fluida entre estrategias (MOOMOO, COPILOT, LOCAL_AGENT)', () => {
-    executionBridge.setExecutionMode('COPILOT');
-    assert.equal(executionBridge.getExecutionMode(), 'COPILOT');
-    assert.equal(executionBridge.getBrokerSummary().broker, 'Happi');
-
+  it('Execution Bridge debe permitir conmutación fluida entre estrategias (MOOMOO, LOCAL_AGENT)', () => {
     executionBridge.setExecutionMode('LOCAL_AGENT');
     assert.equal(executionBridge.getExecutionMode(), 'LOCAL_AGENT');
+    assert.equal(executionBridge.getBrokerSummary().broker, 'Moomoo');
 
     executionBridge.setExecutionMode('MOOMOO');
     assert.equal(executionBridge.getExecutionMode(), 'MOOMOO');

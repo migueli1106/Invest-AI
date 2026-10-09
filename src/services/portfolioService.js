@@ -6,7 +6,7 @@ import { env } from '../config/environment.js';
 
 /**
  * 💼 [INVEST AI] Servicio de Gestión y Valoración de Portafolio Real
- * Gestiona posiciones en brokers (Happi/Osmo), computa P&L y rotación de capital.
+ * Gestiona posiciones en brokers (Moomoo/Osmo), computa P&L y rotación de capital.
  */
 
 class PortfolioService {
@@ -31,7 +31,7 @@ class PortfolioService {
   /**
    * Registra una nueva posición de compra ejecutada en el broker.
    */
-  async addPosition({ symbol, shares, buyPrice, broker = 'Happi', stopLoss, targetPrice }) {
+  async addPosition({ symbol, shares, buyPrice, broker = 'Moomoo', stopLoss, targetPrice }) {
     const cleanSymbol = symbol.trim().toUpperCase();
     const cleanShares = Number(shares);
     const cleanBuyPrice = Number(buyPrice);
@@ -46,7 +46,7 @@ class PortfolioService {
       currentMarketValue: totalCost,
       unrealizedPnL: 0,
       unrealizedPnLPercent: 0,
-      broker: broker || 'Happi',
+      broker: broker || 'Moomoo',
       status: 'OPEN',
       stopLoss: stopLoss !== undefined && stopLoss !== null ? Number(stopLoss) : undefined,
       targetPrice: targetPrice !== undefined && targetPrice !== null ? Number(targetPrice) : undefined,

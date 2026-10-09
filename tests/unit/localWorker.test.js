@@ -4,12 +4,11 @@ import assert from 'node:assert/strict';
 import { server } from '../../src/server.js';
 import { env } from '../../src/config/environment.js';
 import { localBridgeWorker } from '../../src/worker/localBridgeWorker.js';
-import { hapiBrowserAutomation } from '../../src/worker/hapiBrowserAutomation.js';
 import { moomooService } from '../../src/services/broker/moomooService.js';
 import { localBridgeService } from '../../src/services/broker/localBridgeService.js';
 import { capitalManagerService } from '../../src/services/capitalManagerService.js';
 
-describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Residencial (Opción B)', () => {
+describe('🛰️ Suite de Pruebas Unitarias: Worker Local Residencial para Moomoo OpenD', () => {
   let baseUrl;
   let origInfo;
   let origWarn;
@@ -57,30 +56,27 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
     capitalManagerService.reset(35.00);
   });
 
-  // 1. Detección y Configuración de Navegador
-  it('Debe localizar el ejecutable de Chrome o soportar fallback defensivo', () => {
-    const chrome = hapiBrowserAutomation.findChromeExecutable();
-    // En Windows debe encontrar el path si existe, o retornar null/string
-    assert.ok(chrome === null || typeof chrome === 'string');
-    assert.equal(hapiBrowserAutomation.profileDir, './.hapi-profile');
+  // 1. Sincronización Periódica de Saldo con Cloud Run
+  it('syncBalance debe consultar moomooService y enviar POST /api/bridge/sync-balance a Cloud Run', async () => {
+    const summary = await localBridgeWorker.syncBalance();
+    assert.ok(summary);
+    assert.equal(summary.broker, 'Moomoo');
+    assert.ok(summary.cash > 0);
   });
 
-  // 2. Ejecución en Modo Dry-Run / Simulado
-  it('Modo --dry-run: debe simular compra calculando acciones sin dinero real', async () => {
-    const order = {
-      bridgeOrderId: 'bridge_test_dryrun_1',
+  // 2. Ejecución en Modo Dry-Run / Simulado contra OpenD
+  it('Modo --dry-run: debe ejecutar orden en Moomoo con trdEnv SIMULATE', async () => {
+    const result = await moomooService.executeOrder({
       symbol: 'AAPL',
-      notional: 35.00,
-      currentPrice: 220.00,
-    };
-
-    const result = await hapiBrowserAutomation.executeBuy(order, { dryRun: true });
+      qty: 0.1591,
+      price: 220.00,
+      side: 'BUY',
+      trdEnv: 'SIMULATE',
+    });
     assert.equal(result.success, true);
-    assert.equal(result.simulated, true);
-    assert.equal(result.status, 'FILLED');
     assert.equal(result.symbol, 'AAPL');
-    assert.equal(result.executedShares, 0.1591);
-    assert.equal(result.fillPrice, 220.00);
+    assert.equal(result.broker, 'Moomoo');
+    assert.equal(result.trdEnv, 'SIMULATE');
   });
 
   // 3. Consulta de Órdenes Pendientes vía HTTP a Cloud Run
@@ -93,7 +89,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
   });
 
   // 4. Procesamiento Exitoso de Orden (status: FILLED)
-  it('handleSingleOrder debe ejecutar compra simulada y reportar status FILLED a Cloud Run', async () => {
+  it('handleSingleOrder debe ejecutar compra en Moomoo y reportar status FILLED a Cloud Run', async () => {
     const queued = localBridgeService.queueOrder({
       symbol: 'NVDA',
       qty: 0.25,
@@ -104,7 +100,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
     await localBridgeWorker.handleSingleOrder(queued.order);
 
     const pending = localBridgeService.getPendingOrders();
-    assert.equal(pending.length, 0); // La orden fue completada y purgada
+    assert.equal(pending.length, 0);
 
     const completed = localBridgeService.getOrder(queued.bridgeOrderId);
     assert.equal(completed.status, 'COMPLETED');
@@ -112,7 +108,7 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
   });
 
   // 5. FLEXIBLE_CAPITAL: Resiliencia y Liberación Inmediata de Capital ante Fallos
-  it('Ante un fallo del navegador, debe reportar CANCELLED y liberar los $35 USD en Cloud Run', async () => {
+  it('Ante un fallo en Moomoo OpenD, debe reportar CANCELLED y liberar los $35 USD en Cloud Run', async () => {
     const queued = localBridgeService.queueOrder({
       symbol: 'TSLA',
       qty: 0.15,
@@ -120,10 +116,8 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
       currentPrice: 230.00,
     });
 
-    // Capital preventivo reservado ($0 disponible)
     assert.equal(capitalManagerService.getCapitalStatus().availableCash, 0.00);
 
-    // Forzar fallo simulando excepción en moomooService.executeOrder
     const originalExecute = moomooService.executeOrder;
     moomooService.executeOrder = async () => {
       throw new Error('Timeout al esperar respuesta de Moomoo OpenD');
@@ -132,12 +126,10 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
     try {
       await localBridgeWorker.handleSingleOrder(queued.order);
 
-      // Verificar que se reportó CANCELLED y se liberó el capital
       const order = localBridgeService.getOrder(queued.bridgeOrderId);
       assert.equal(order.status, 'CANCELLED');
       assert.ok(order.notes.includes('Timeout'));
 
-      // Regla FLEXIBLE_CAPITAL: los $35 USD vuelven a estar 100% libres
       const cap = capitalManagerService.getCapitalStatus();
       assert.equal(cap.availableCash, 35.00);
       assert.equal(cap.deployedCapital, 0.00);
@@ -166,14 +158,17 @@ describe('🛰️ Suite de Pruebas Unitarias: Worker Local de Automatización Re
   });
 
   // 8. Control de Ciclo de Vida del Daemon (start/stop)
-  it('start y stop deben administrar el temporizador de polling limpiamente', () => {
-    localBridgeWorker.intervalMs = 50000; // intervalo largo para no disparar eventos
+  it('start y stop deben administrar temporizadores de polling y sync limpiamente', () => {
+    localBridgeWorker.intervalMs = 50000;
+    localBridgeWorker.syncIntervalMs = 50000;
     localBridgeWorker.start();
     assert.equal(localBridgeWorker.isRunning, true);
     assert.ok(localBridgeWorker.timerHandle !== null);
+    assert.ok(localBridgeWorker.syncTimerHandle !== null);
 
     localBridgeWorker.stop();
     assert.equal(localBridgeWorker.isRunning, false);
     assert.equal(localBridgeWorker.timerHandle, null);
+    assert.equal(localBridgeWorker.syncTimerHandle, null);
   });
 });

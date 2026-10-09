@@ -81,7 +81,7 @@ export class ReportingService {
         items: closedPositions,
       },
       broker: {
-        name: 'Happi',
+        name: 'Moomoo',
         status: 'ACTIVE',
         cash: capitalStatus.availableCash,
         portfolioValue: parseFloat((portfolioPerformance.summary.totalMarketValue + capitalStatus.availableCash).toFixed(2)),

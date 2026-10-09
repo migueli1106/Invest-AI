@@ -9,7 +9,7 @@ import { executionBridge } from '../services/broker/executionBridge.js';
 
 /**
  * 📥 [INVEST AI] Controlador Unificado de Webhooks para Mensajería & Trading
- * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Happi y Capital Flexible.
+ * Soporta Meta, Twilio y Telegram con Human-in-the-Loop, Moomoo y Capital Dinámico.
  */
 
 class WebhookHandler {
@@ -38,7 +38,7 @@ class WebhookHandler {
 
         if (buttonId.startsWith('approve_')) {
           if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
-          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n📱 Abre Happi para colocar la orden.`);
+          await whatsappService.sendTextMessage(from, `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de *${symbol}*. \n📱 Abre Moomoo para verificar la orden.`);
           return { status: 200, result: { action: 'APPROVED', symbol } };
         } else if (buttonId.startsWith('reject_')) {
           if (options.updateDb) await this.updateSignalStatus(symbol, 'REJECTED', from);
@@ -61,7 +61,7 @@ class WebhookHandler {
       if (upper === 'APROBAR' || upper.startsWith('APROBAR') || upper === 'SI' || upper === 'SÍ') {
         const symbol = upper.includes(' ') ? upper.split(' ')[1] : 'ACTIVO';
         if (options.updateDb) await this.updateSignalStatus(symbol, 'APPROVED', from);
-        const text = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de ${symbol}. \n📱 Revisa tu broker (Happi).`;
+        const text = `✅ *¡OPERACIÓN APROBADA!* \n\nHas autorizado la compra de ${symbol}. \n📱 Revisa tu broker (Moomoo).`;
         await twilioService.sendTextMessage(from, text);
         return { status: 200, result: { action: 'APPROVED', from, symbol }, twiml: `<Response><Message>${text}</Message></Response>` };
       } else if (upper === 'RECHAZAR' || upper.startsWith('RECHAZAR') || upper === 'NO') {

@@ -3,12 +3,12 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { capitalManagerService } from '../../src/services/capitalManagerService.js';
 
-describe('💰 Suite de Pruebas Unitarias: Gestor de Capital Flexible Multi-Posición (FLEXIBLE_CAPITAL)', () => {
+describe('💰 Suite de Pruebas Unitarias: Motor de Capital Dinámico Exponencial & Sizing Proporcional', () => {
   beforeEach(() => {
     capitalManagerService.reset(35.00);
   });
 
-  it('calculateFractionalSizing debe calcular exactamente la cantidad fraccionada para acciones caras con $35 USD', () => {
+  it('calculateFractionalSizing debe calcular la cantidad fraccionada con asignación manual', () => {
     // NVDA cotizando a $120.00 -> $35 / $120 = 0.29166... -> 0.2917 acciones
     const sizingNVDA = capitalManagerService.calculateFractionalSizing('NVDA', 120.00, 35.00);
     assert.equal(sizingNVDA.allowed, true);
@@ -26,6 +26,29 @@ describe('💰 Suite de Pruebas Unitarias: Gestor de Capital Flexible Multi-Posi
     const sizingSPY = capitalManagerService.calculateFractionalSizing('SPY', 540.00, 35.00);
     assert.equal(sizingSPY.allowed, true);
     assert.equal(sizingSPY.qty, 0.0648);
+  });
+
+  it('Motor Dinámico: calculateFractionalSizing proporcional con saldos de $50, $500 y $5,000 USD', () => {
+    // 1. Saldo $50 USD -> 10% = $5, pero min $15 USD aplica -> $15 USD
+    capitalManagerService.reset(50.00);
+    const sizing50 = capitalManagerService.calculateFractionalSizing('NVDA', 100.00);
+    assert.equal(sizing50.allowed, true);
+    assert.equal(sizing50.notional, 15.00);
+    assert.equal(sizing50.qty, 0.1500);
+
+    // 2. Saldo $500 USD -> 10% = $50 USD (entre $15 y max 25%=$125) -> $50 USD
+    capitalManagerService.reset(500.00);
+    const sizing500 = capitalManagerService.calculateFractionalSizing('MSFT', 100.00);
+    assert.equal(sizing500.allowed, true);
+    assert.equal(sizing500.notional, 50.00);
+    assert.equal(sizing500.qty, 0.5000);
+
+    // 3. Saldo $5,000 USD -> 10% = $500 USD (entre $15 y max 25%=$1250) -> $500 USD
+    capitalManagerService.reset(5000.00);
+    const sizing5000 = capitalManagerService.calculateFractionalSizing('AAPL', 100.00);
+    assert.equal(sizing5000.allowed, true);
+    assert.equal(sizing5000.notional, 500.00);
+    assert.equal(sizing5000.qty, 5.0000);
   });
 
   it('Capital Flexible Multi-Posición: debe permitir múltiples compras simultáneas sin bloquear por pool', () => {
@@ -68,17 +91,32 @@ describe('💰 Suite de Pruebas Unitarias: Gestor de Capital Flexible Multi-Posi
     assert.equal(nextTrade.notional, 35.00);
   });
 
-  it('syncWithBrokerBalance debe calibrar el pool con los balances reales del broker', () => {
-    const mockBrokerAccount = {
-      cash: '34.80',
-      portfolio_value: '34.80',
-      buying_power: '69.60',
+  it('syncWithMoomoo debe calibrar el pool con saldos reales de Moomoo OpenD', () => {
+    const moomooAccount = {
+      cash: 1250.50,
+      totalAssets: 3400.00,
+      buyingPower: 2500.00,
     };
 
-    capitalManagerService.syncWithBrokerBalance(mockBrokerAccount);
+    capitalManagerService.syncWithMoomoo(moomooAccount);
     const status = capitalManagerService.getCapitalStatus();
-    assert.equal(status.availableCash, 34.80);
-    assert.equal(status.totalCapital, 34.80);
+    assert.equal(status.availableCash, 1250.50);
+    assert.equal(status.totalCapital, 3400.00);
+    assert.equal(status.buyingPower, 2500.00);
+    assert.equal(status.broker, 'Moomoo');
     assert.equal(status.canTrade, true);
+  });
+
+  it('Multi-Posición Escalable: debe respetar límite de hasta 10 posiciones simultáneas', () => {
+    capitalManagerService.reset(10000.00);
+    for (let i = 1; i <= 10; i++) {
+      capitalManagerService.reserveCapital(`pos_${i}`, 100.00);
+    }
+    assert.equal(capitalManagerService.getCapitalStatus().activeReservationsCount, 10);
+    assert.equal(capitalManagerService.getCapitalStatus().canTrade, false);
+
+    const eleventhTrade = capitalManagerService.calculateFractionalSizing('NVDA', 100.00);
+    assert.equal(eleventhTrade.allowed, false);
+    assert.equal(eleventhTrade.reason, 'MAX_POSITIONS_REACHED');
   });
 });

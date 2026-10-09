@@ -95,12 +95,12 @@ function updatePositionsTable(positions) {
     const pnlPercent = Number(p.unrealizedPnLPercent || 0);
     const isPos = pnl >= 0;
     const sign = isPos ? '+' : '';
-    const brokerClass = (p.broker || '').toLowerCase() === 'happi' ? 'broker-happi' : '';
+    const brokerClass = (p.broker || '').toLowerCase() === 'moomoo' ? 'broker-moomoo' : '';
 
     return `
       <tr>
         <td><span class="ticker-badge">${p.symbol}</span></td>
-        <td><span class="broker-pill ${brokerClass}">${p.broker || 'Happi'}</span></td>
+        <td><span class="broker-pill ${brokerClass}">${p.broker || 'Moomoo'}</span></td>
         <td>${p.shares}</td>
         <td>$${Number(p.averageBuyPrice || 0).toFixed(2)}</td>
         <td style="color:#fff; font-weight:600;">$${Number(p.currentPrice || 0).toFixed(2)}</td>

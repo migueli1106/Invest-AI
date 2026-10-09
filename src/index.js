@@ -58,10 +58,10 @@ async function main() {
     }]);
 
   } else if (command === '--broker-status') {
-    console.info('🏦 Consultando estado del Broker Co-Piloto (Happi)...');
+    console.info('🏦 Consultando estado del Broker Moomoo OpenD...');
     const status = capitalManagerService.getCapitalStatus();
     console.table([{
-      Broker: 'Happi (Co-Piloto Asistido)',
+      Broker: 'Moomoo OpenD (Oficial)',
       'Efectivo Disponible': `$${status.availableCash.toFixed(2)} USD`,
       'Capital Desplegado': `$${status.deployedCapital.toFixed(2)} USD`,
       'Modo': 'Zero-Trust / Cloud Run Guard',

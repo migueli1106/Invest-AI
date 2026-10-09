@@ -10,7 +10,7 @@ import { telegramService } from './telegramService.js';
 class SchedulerService {
   constructor() {
     this.alertHistory = new Map(); // symbol -> timestamp en ms
-    this.COOLDOWN_MS = 4 * 60 * 60 * 1000; // Ventana de 4 horas anti-spam para señales
+    this.COOLDOWN_MS = 45 * 60 * 1000; // Ventana agresiva de 45 minutos anti-spam para señales intradía
     this.exitAlertHistory = new Map(); // positionId/symbol -> timestamp en ms
     this.EXIT_COOLDOWN_MS = 30 * 60 * 1000; // Ventana de 30 minutos anti-spam para alertas de salida repetidas
   }
@@ -41,19 +41,13 @@ class SchedulerService {
         if (part.type === 'minute') minute = parseInt(part.value, 10);
       }
 
-      // Si hour es 24 (puede suceder en ciertas implementaciones para medianoche), normalizar a 0
       if (hour === 24) hour = 0;
 
       const businessDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-      if (!businessDays.includes(weekday)) {
-        return false;
-      }
+      if (!businessDays.includes(weekday)) return false;
 
       const totalMinutes = hour * 60 + minute;
-      const openMinutes = 9 * 60 + 30; // 9:30 AM = 570
-      const closeMinutes = 16 * 60;    // 4:00 PM = 960
-
-      return totalMinutes >= openMinutes && totalMinutes < closeMinutes;
+      return totalMinutes >= (9 * 60 + 30) && totalMinutes < (16 * 60);
     } catch (err) {
       console.warn(`⚠️ [SCHEDULER] Error al evaluar horario bursátil: ${err.message}`);
       return false;
@@ -79,12 +73,7 @@ class SchedulerService {
 
     if (!marketOpen && !forceMarketOpen) {
       console.info('⏸️ [SCHEDULER] Wall Street cerrado. Escaneo en pausa.');
-      return {
-        executed: false,
-        reason: 'MARKET_CLOSED',
-        marketOpen: false,
-        timestamp: new Date().toISOString(),
-      };
+      return { executed: false, reason: 'MARKET_CLOSED', marketOpen: false, timestamp: new Date().toISOString() };
     }
 
     console.info(`🔍 [SCHEDULER] Iniciando escaneo autónomo de ${watchlist.length} activos...`);
@@ -98,25 +87,18 @@ class SchedulerService {
         const signal = await predictionEngine.generateSignal(symbol);
         signalsEvaluated.push(signal);
 
-        // Filtro de Alta Probabilidad: Confianza >= 80%, Ratio R/B >= 2:1, Acción BUY o SELL
-        const isHighProbability =
-          signal.confidence >= 80 &&
-          signal.riskRewardRatio >= 2.0 &&
+        const isHighProbability = signal.confidence >= 80 && signal.riskRewardRatio >= 2.0 &&
           (signal.action === 'BUY' || signal.action === 'SELL');
 
-        if (!isHighProbability) {
-          continue;
-        }
+        if (!isHighProbability) continue;
 
-        // Control de Cooldown Anti-Spam (4 horas)
         const lastSent = this.alertHistory.get(symbol);
         if (lastSent && now - lastSent < this.COOLDOWN_MS) {
-          console.info(`⏳ [SCHEDULER] Omitiendo alerta para ${symbol} (en período de enfriamiento de 4h).`);
+          console.info(`⏳ [SCHEDULER] Omitiendo alerta para ${symbol} (en período de enfriamiento de 45m).`);
           dispatched.push({ symbol, action: signal.action, status: 'SKIPPED_COOLDOWN' });
           continue;
         }
 
-        // Despachar alerta a Telegram
         console.info(`🚀 [SCHEDULER] Despachando señal de alta probabilidad: ${symbol} (${signal.action} ${signal.confidence}%)`);
         const sendResult = await telegramService.sendSignalAlert(targetChatId, signal);
         this.alertHistory.set(symbol, now);
@@ -147,7 +129,7 @@ class SchedulerService {
   }
 
   /**
-   * Audita la salud de las inversiones abiertas y alerta si tocan TP o SL.
+   * Audita la salud de las inversiones abiertas, emite Break-Even y alertas TP/SL.
    * @param {string|number} [chatId]
    */
   async runPortfolioHealthCheck(chatId = null) {
@@ -160,21 +142,44 @@ class SchedulerService {
     const alertResults = [];
     const now = Date.now();
 
+    // 1. Evaluación de Protección Break-Even (+4.0% de ganancia no realizada)
+    for (const pos of (performance.positions || [])) {
+      const pnlPct = Number(pos.unrealizedPnLPercent || 0);
+      if (pnlPct >= 4.0 && pnlPct < 8.0) {
+        const beKey = `be_${pos.id || pos.symbol}`;
+        const lastBe = this.exitAlertHistory.get(beKey);
+        if (!lastBe || now - lastBe >= this.EXIT_COOLDOWN_MS) {
+          const buyPrice = Number(pos.averageBuyPrice || pos.buyPrice || 0);
+          const beMsg = [
+            `🛡️ *¡PROTECCIÓN BREAK-EVEN DISPONIBLE EN MOOMOO!*`,
+            ``,
+            `Tu posición en *${pos.symbol}* ha alcanzado *+${pnlPct.toFixed(1)}%* de beneficio no realizado.`,
+            `🎯 *Acción de Protección:* Ajusta tu Stop-Loss al precio de entrada (*$${buyPrice.toFixed(2)}*).`,
+            `Eliminas el riesgo a $0.00 mientras buscas el Take-Profit (+8% a +12%).`,
+          ].join('\n');
+          try {
+            await telegramService.sendMessage(targetChatId, beMsg, { parse_mode: 'Markdown' });
+            this.exitAlertHistory.set(beKey, now);
+            alertResults.push({ symbol: pos.symbol, type: 'BREAK_EVEN', sent: true });
+          } catch (beErr) {
+            console.error(`❌ [SCHEDULER] Error break-even alerta para ${pos.symbol}: ${beErr.message}`);
+          }
+        }
+      }
+    }
+
+    // 2. Evaluación de Triggers de Salida (Take-Profit & Stop-Loss)
     for (const trigger of triggers) {
       const posKey = String(trigger.positionId || trigger.symbol);
       const lastExitAlert = this.exitAlertHistory.get(posKey);
 
       if (lastExitAlert && now - lastExitAlert < this.EXIT_COOLDOWN_MS) {
         console.info(`⏳ [SCHEDULER] Omitiendo alerta repetida de salida para ${trigger.symbol} (${trigger.type}) - En enfriamiento de 30m.`);
-        alertResults.push({
-          trigger,
-          sent: false,
-          skipped: 'COOLDOWN',
-        });
+        alertResults.push({ trigger, sent: false, skipped: 'COOLDOWN' });
         continue;
       }
 
-      const brokerName = (trigger.broker || 'HAPPI').toUpperCase();
+      const brokerName = (trigger.broker || 'MOOMOO').toUpperCase();
       let alertMessage = '';
 
       if (trigger.type === 'TAKE_PROFIT') {
@@ -196,28 +201,18 @@ class SchedulerService {
       }
 
       try {
-        const sendResult = await telegramService.sendMessage(targetChatId, alertMessage, {
-          parse_mode: 'Markdown',
-        });
+        const sendResult = await telegramService.sendMessage(targetChatId, alertMessage, { parse_mode: 'Markdown' });
         this.exitAlertHistory.set(posKey, now);
-        alertResults.push({
-          trigger,
-          sent: true,
-          sendResult,
-        });
+        alertResults.push({ trigger, sent: true, sendResult });
       } catch (err) {
         console.error(`❌ [SCHEDULER] Error enviando alerta de salida para ${trigger.symbol}: ${err.message}`);
-        alertResults.push({
-          trigger,
-          sent: false,
-          error: err.message,
-        });
+        alertResults.push({ trigger, sent: false, error: err.message });
       }
     }
 
     return {
       checkedAt: new Date().toISOString(),
-      openPositionsCount: performance.positions.length,
+      openPositionsCount: (performance.positions || []).length,
       triggersCount: triggers.length,
       alertsDispatched: alertResults.length,
       alerts: alertResults,

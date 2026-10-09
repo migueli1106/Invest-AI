@@ -59,7 +59,7 @@ export const PortfolioHoldingSchema = z.object({
   currentMarketValue: z.number().positive().optional(),
   unrealizedPnL: z.number().optional(),
   unrealizedPnLPercent: z.number().optional(),
-  broker: z.enum(['Happi', 'Osmo', 'Other']).default('Happi'),
+  broker: z.enum(['Moomoo', 'Osmo', 'Other']).default('Moomoo'),
   status: z.enum(['OPEN', 'CLOSED']).default('OPEN'),
   stopLoss: z.number().positive().optional(),
   targetPrice: z.number().positive().optional(),
@@ -75,7 +75,7 @@ export const PositionInputSchema = z.object({
   symbol: z.string().min(1).toUpperCase(),
   shares: z.number().positive(),
   buyPrice: z.number().positive(),
-  broker: z.enum(['Happi', 'Osmo', 'Other']).default('Happi'),
+  broker: z.enum(['Moomoo', 'Osmo', 'Other']).default('Moomoo'),
   stopLoss: z.number().positive().optional(),
   targetPrice: z.number().positive().optional(),
 });

@@ -1,7 +1,7 @@
 /**
- * 💰 [INVEST AI] Gestor de Capital Flexible Multi-Posición
- * Administra el dimensionamiento fraccionario por operación ($35.00 USD nominal)
- * permitiendo la apertura simultánea de múltiples trades sin bloqueos de pool agotado.
+ * 💰 [INVEST AI] Motor de Capital Dinámico Exponencial & Sizing Proporcional
+ * Implementa el modelo de dimensionamiento institucional (Kelly Fraccionario / 10% cash base),
+ * permitiendo hasta 10 posiciones simultáneas de alta rotación sin bloqueos artificiales.
  */
 
 class CapitalManagerService {
@@ -10,54 +10,105 @@ class CapitalManagerService {
     this.totalCapital = initialCapital;
     this.deployedCapital = 0.00;
     this.availableCash = initialCapital;
-    this.reservations = new Map(); // orderId/positionId -> allocatedAmount
+    this.buyingPower = initialCapital;
+    this.maxConcurrentPositions = 10;
+    this.reservations = new Map(); // positionId -> allocatedAmount
   }
 
   /**
-   * Retorna el estado consolidado del pool de capital bajo la política flexible.
+   * Retorna el estado consolidado del pool de capital bajo la política dinámica.
    */
   getCapitalStatus() {
     return {
       totalCapital: parseFloat(this.totalCapital.toFixed(2)),
       deployedCapital: parseFloat(this.deployedCapital.toFixed(2)),
       availableCash: parseFloat(this.availableCash.toFixed(2)),
+      buyingPower: parseFloat(this.buyingPower.toFixed(2)),
       currency: 'USD',
-      canTrade: true, // Capacidad multi-posición permanente
+      canTrade: this.reservations.size < this.maxConcurrentPositions,
       activeReservationsCount: this.reservations.size,
+      maxPositions: this.maxConcurrentPositions,
       policy: 'FLEXIBLE_CAPITAL',
+      broker: 'Moomoo',
     };
   }
 
   /**
-   * Calcula el dimensionamiento fraccionario para una compra (por defecto $35.00 USD por operación).
-   * En el modelo Capital Flexible, no bloquea por pool agotado, permitiendo multi-posiciones simultáneas.
+   * Sincroniza balances reales (cash, buyingPower, totalAssets) obtenidos de Moomoo OpenD.
+   * @param {object} accountData
+   */
+  syncWithMoomoo(accountData) {
+    if (!accountData) return;
+
+    const realCash = parseFloat(Number(accountData.cash ?? accountData.availableCash ?? 0).toFixed(2));
+    const realBuyingPower = parseFloat(Number(accountData.buyingPower ?? accountData.buying_power ?? realCash).toFixed(2));
+    const realTotal = parseFloat(Number(accountData.totalAssets ?? accountData.totalCapital ?? accountData.portfolio_value ?? realCash).toFixed(2));
+
+    this.availableCash = realCash;
+    this.buyingPower = realBuyingPower;
+    this.totalCapital = realTotal;
+    this.deployedCapital = parseFloat(Math.max(0, this.totalCapital - this.availableCash).toFixed(2));
+
+    console.info(`💼 [CAPITAL MOOMOO SYNC] Sincronizado: Total $${this.totalCapital} | Efectivo $${this.availableCash} | Buying Power $${this.buyingPower}`);
+  }
+
+  /**
+   * Alias de compatibilidad hacia syncWithMoomoo.
+   */
+  syncWithBrokerBalance(account) {
+    return this.syncWithMoomoo(account);
+  }
+
+  /**
+   * Calcula el dimensionamiento fraccionario dinámico para una orden.
+   * Si customAllocation es null/indefinido, calcula el 10% del efectivo disponible:
+   * allocation = Math.max(15.00, Math.min(this.availableCash * 0.10, this.availableCash * 0.25))
    * @param {string} symbol - Ticker del activo
    * @param {number} currentPrice - Precio actual de mercado
-   * @param {number} [notionalAllocation=35.00] - Asignación nominal por trade
+   * @param {number|null} [customAllocation=null] - Asignación manual opcional
    */
-  calculateFractionalSizing(symbol, currentPrice, notionalAllocation = 35.00) {
+  calculateFractionalSizing(symbol, currentPrice, customAllocation = null) {
     const cleanPrice = Number(currentPrice);
     if (!cleanPrice || cleanPrice <= 0) {
       throw new Error(`Precio de cotización inválido para dimensionamiento: ${currentPrice}`);
     }
 
-    const notional = parseFloat(Math.max(1.00, Number(notionalAllocation || 35.00)).toFixed(2));
-    
-    // Cálculo de cantidad fraccionada con 4 decimales
+    const cleanSymbol = (symbol || 'ACTIVO').toUpperCase();
+
+    // Límite de multi-posiciones simultáneas (máximo 10)
+    if (this.reservations.size >= this.maxConcurrentPositions) {
+      return {
+        allowed: false,
+        reason: 'MAX_POSITIONS_REACHED',
+        symbol: cleanSymbol,
+        maxPositions: this.maxConcurrentPositions,
+        activePositions: this.reservations.size,
+      };
+    }
+
+    let notional = 0;
+    if (customAllocation !== null && customAllocation !== undefined) {
+      notional = parseFloat(Math.max(1.00, Number(customAllocation)).toFixed(2));
+    } else {
+      const dynamicAllocation = Math.max(15.00, Math.min(this.availableCash * 0.10, this.availableCash * 0.25));
+      notional = parseFloat(dynamicAllocation.toFixed(2));
+    }
+
+    // Cálculo fraccionario con 4 decimales
     const qty = parseFloat((notional / cleanPrice).toFixed(4));
 
     if (qty <= 0) {
       return {
         allowed: false,
         reason: 'QTY_TOO_SMALL',
-        symbol: symbol.toUpperCase(),
+        symbol: cleanSymbol,
         notional,
       };
     }
 
     return {
       allowed: true,
-      symbol: symbol.toUpperCase(),
+      symbol: cleanSymbol,
       currentPrice: cleanPrice,
       notional,
       qty,
@@ -67,7 +118,6 @@ class CapitalManagerService {
 
   /**
    * Reserva contablemente el capital asignado al emitir una orden de compra.
-   * Permite operaciones concurrentes adaptando la base contable.
    * @param {string} positionId
    * @param {number} amount
    */
@@ -80,14 +130,13 @@ class CapitalManagerService {
     this.totalCapital = parseFloat((this.availableCash + this.deployedCapital).toFixed(2));
     this.reservations.set(positionId, cleanAmount);
 
-    console.info(`💼 [CAPITAL FLEXIBLE] Reservados $${cleanAmount} USD para ${positionId}. Desplegado: $${this.deployedCapital} USD.`);
+    console.info(`💼 [CAPITAL DINÁMICO] Reservados $${cleanAmount} USD para ${positionId}. Desplegado: $${this.deployedCapital} USD.`);
   }
 
   /**
-   * Libera capital tras el cierre de una posición (Take-Profit o Stop-Loss),
-   * reintegrando el valor liquidado a la liquidez contable.
+   * Libera capital tras el cierre de una posición, reintegrando el retorno a liquidez.
    * @param {string} positionId
-   * @param {number} returnedAmount - Valor recuperado al cierre de la posición
+   * @param {number} returnedAmount
    */
   releaseCapital(positionId, returnedAmount) {
     const original = this.reservations.get(positionId) || 0;
@@ -99,7 +148,7 @@ class CapitalManagerService {
     this.reservations.delete(positionId);
 
     const netChange = parseFloat((cleanReturned - original).toFixed(2));
-    console.info(`🔄 [CAPITAL LIQUIDACIÓN] Liberados $${cleanReturned} USD de ${positionId} (Neto: ${netChange >= 0 ? '+' : ''}$${netChange}). Disponible: $${this.availableCash} USD.`);
+    console.info(`🔄 [CAPITAL ROTACIÓN] Liberados $${cleanReturned} USD de ${positionId} (Neto: ${netChange >= 0 ? '+' : ''}$${netChange}). Disponible: $${this.availableCash} USD.`);
 
     return {
       totalCapital: this.totalCapital,
@@ -110,24 +159,7 @@ class CapitalManagerService {
   }
 
   /**
-   * Sincroniza el gestor con los balances reales del broker (Happi/Manual).
-   * @param {object} account
-   */
-  syncWithBrokerBalance(account) {
-    if (!account || account.cash === undefined) return;
-
-    const realCash = parseFloat(Number(account.cash).toFixed(2));
-    const realPortfolioValue = parseFloat(Number(account.portfolio_value || account.cash).toFixed(2));
-
-    this.availableCash = realCash;
-    this.totalCapital = realPortfolioValue;
-    this.deployedCapital = parseFloat(Math.max(0, this.totalCapital - this.availableCash).toFixed(2));
-
-    console.info(`💼 [CAPITAL SYNC] Sincronizado con Broker: Total $${this.totalCapital} | Efectivo $${this.availableCash} | Desplegado $${this.deployedCapital}`);
-  }
-
-  /**
-   * Reinicia el gestor a su estado inicial (utilizado en tests aislados).
+   * Reinicia el gestor a su estado inicial (para suites de pruebas).
    * @param {number} [capital=35.00]
    */
   reset(capital = 35.00) {
@@ -135,6 +167,7 @@ class CapitalManagerService {
     this.totalCapital = capital;
     this.deployedCapital = 0.00;
     this.availableCash = capital;
+    this.buyingPower = capital;
     this.reservations.clear();
   }
 }

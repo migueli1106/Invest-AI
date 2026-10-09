@@ -53,8 +53,6 @@ const EnvironmentSchema = z.object({
 
   // Worker Residencial de Automatización Local
   CLOUD_RUN_URL: z.string().default('https://invest-ai-engine-891662254338.us-central1.run.app'),
-  LOCAL_CHROME_PATH: z.string().optional(),
-  LOCAL_CHROME_PROFILE_DIR: z.string().default('./.hapi-profile'),
 
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 });

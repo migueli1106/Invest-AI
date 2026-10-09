@@ -8,7 +8,7 @@ import { portfolioService } from '../portfolioService.js';
  */
 class LocalBridgeService {
   constructor() {
-    this.brokerName = 'Happi';
+    this.brokerName = 'Moomoo';
     this.ttlMs = 5 * 60 * 1000; // TTL: 5 minutos
     this.orders = new Map(); // bridgeOrderId -> OrderRecord
   }

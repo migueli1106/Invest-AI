@@ -255,7 +255,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 13. Resumen Unificado del Broker / Execution Bridge (GET /api/broker/summary)
+  // 13. Bridge Local: Sincronizar Balance de Moomoo (POST /api/bridge/sync-balance)
+  if (method === 'POST' && url.pathname === '/api/bridge/sync-balance') {
+    if (!isBridgeAuthorized(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized: invalid or missing bridge secret' }));
+      return;
+    }
+    try {
+      const raw = await readRequestBody(req);
+      const payload = JSON.parse(raw || '{}');
+      capitalManagerService.syncWithMoomoo(payload);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, capital: capitalManagerService.getCapitalStatus() }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // 14. Resumen Unificado del Broker / Execution Bridge (GET /api/broker/summary)
   if (method === 'GET' && url.pathname === '/api/broker/summary') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true, summary: executionBridge.getBrokerSummary() }));
@@ -333,8 +353,8 @@ if (!isTestEnv) {
   server.listen(PORT, () => {
     console.info(`🚀 [CLOUD RUN] Servidor Invest AI activo en el puerto ${PORT}`);
     console.info(`👉 Healthcheck:        http://localhost:${PORT}/health`);
-    console.info(`👉 Capital Pool ($35): http://localhost:${PORT}/api/capital/status`);
-    console.info(`👉 Broker Co-Piloto:   Happi (Asistido / Zero-Trust)`);
+    console.info(`👉 Capital Dinámico:   http://localhost:${PORT}/api/capital/status`);
+    console.info(`👉 Broker Principal:   Moomoo OpenD (Oficial / Zero-Trust)`);
   });
 }
 
