@@ -36,10 +36,10 @@ const EnvironmentSchema = z.object({
   // Cloud Scheduler & Automatización Segura
   CRON_SECRET: z.string().default('invest_ai_cron_internal_secret'),
 
-  // Broker Execution Bridge (MOOMOO | COPILOT | LOCAL_AGENT)
+  // Broker Execution Bridge (MOOMOO | LOCAL_AGENT)
   EXECUTION_MODE: z.string().default('MOOMOO').transform((val) => {
     const norm = (val || '').trim().toUpperCase();
-    if (norm === 'LOCAL_AGENT' || norm === 'COPILOT') return norm;
+    if (norm === 'LOCAL_AGENT') return norm;
     return 'MOOMOO';
   }),
   BRIDGE_SECRET: z.string().default('invest_ai_bridge_internal_secret'),
@@ -49,7 +49,7 @@ const EnvironmentSchema = z.object({
   MOOMOO_TRD_ENV: z.enum(['SIMULATE', 'REAL']).default('SIMULATE'),
   MOOMOO_OPEND_HOST: z.string().default('127.0.0.1'),
   MOOMOO_OPEND_PORT: z.coerce.number().default(11111),
-  MOOMOO_SCRIPTS_DIR: z.string().default('C:\\Users\\sebas\\.gemini\\config\\skills\\moomooapi\\scripts'),
+  MOOMOO_SCRIPTS_DIR: z.string().optional(),
 
   // Worker Residencial de Automatización Local
   CLOUD_RUN_URL: z.string().default('https://invest-ai-engine-891662254338.us-central1.run.app'),
