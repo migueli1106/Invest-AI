@@ -52,23 +52,32 @@ class ExecutionBridge {
   async executeOrder({ symbol, qty, notional, currentPrice, stopLoss, targetPrice, side = 'BUY', chatId = null }) {
     const sym = (symbol || 'ACTIVO').toUpperCase();
     const price = Number(currentPrice || 100.00);
+    const orderSide = (side || 'BUY').toUpperCase();
 
-    // Dimensionamiento proporcional bajo Capital Dinámico Multi-Posición
-    const sizing = capitalManagerService.calculateFractionalSizing(sym, price, notional || null);
+    let effectiveQty;
+    let effectiveNotional;
 
-    if (!sizing.allowed) {
-      console.warn(`⚠️ [EXECUTION BRIDGE] Parámetros inválidos para orden en ${sym}: ${sizing.reason}`);
-      return {
-        success: false,
-        error: sizing.reason,
-        symbol: sym,
-        mode: this.mode,
-        broker: this.brokerName,
-      };
+    if (orderSide === 'SELL') {
+      // Venta: libera liquidez, no consume pool de efectivo
+      effectiveQty = Number(qty || (notional && price ? notional / price : 1));
+      effectiveNotional = parseFloat((effectiveQty * price).toFixed(2));
+    } else {
+      // Compra: dimensionamiento proporcional bajo Capital Dinámico
+      const sizing = capitalManagerService.calculateFractionalSizing(sym, price, notional || null);
+      if (!sizing.allowed) {
+        console.warn(`⚠️ [EXECUTION BRIDGE] Parámetros inválidos para orden en ${sym}: ${sizing.reason}`);
+        return {
+          success: false,
+          error: sizing.reason,
+          symbol: sym,
+          mode: this.mode,
+          broker: this.brokerName,
+        };
+      }
+      effectiveNotional = sizing.notional;
+      effectiveQty = sizing.qty;
     }
 
-    const effectiveNotional = sizing.notional;
-    const effectiveQty = sizing.qty;
     const effectiveStopLoss = Number(stopLoss || price * 0.95);
     const effectiveTargetPrice = Number(targetPrice || price * 1.10);
 
@@ -79,7 +88,7 @@ class ExecutionBridge {
       currentPrice: price,
       stopLoss: effectiveStopLoss,
       targetPrice: effectiveTargetPrice,
-      side,
+      side: orderSide,
       chatId,
     };
 
@@ -103,7 +112,7 @@ class ExecutionBridge {
       symbol: sym,
       qty: effectiveQty,
       price,
-      side,
+      side: orderSide,
       trdEnv: env.MOOMOO_TRD_ENV || 'SIMULATE',
     });
 

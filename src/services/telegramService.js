@@ -86,7 +86,7 @@ class TelegramService {
       : (signal.action === 'SELL' ? '🔴 VENTA (SELL)' : '🟡 HOLD');
 
     const messageText = [
-      `🎯 *INVEST AI — ALERTA DE OPORTUNIDAD*`,
+      `⚡ *INVEST AI — ALERTA DAY TRADING (INTRADÍA)*`,
       ``,
       `• *Activo:* ${signal.symbol}`,
       `• *Acción:* ${actionEmoji}`,
@@ -94,7 +94,7 @@ class TelegramService {
       `• *Target (Meta):*  $${signal.targetPrice.toFixed(2)} (${signal.expectedReturnPercent >= 0 ? '+' : ''}${signal.expectedReturnPercent.toFixed(2)}%)`,
       `• *Stop Loss:*      $${signal.stopLoss.toFixed(2)}`,
       `• *Ratio R/B:*      ${signal.riskRewardRatio.toFixed(2)} : 1`,
-      `• *Horizonte:*      ${signal.timeHorizonDays} días hábiles`,
+      `• *Horizonte:* Intradía (Misma Sesión)`,
       `• *Confianza:*      ${signal.confidence}%`,
       ``,
       `💡 *Explicabilidad IA:*`,

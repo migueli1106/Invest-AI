@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { schedulerService } from '../../src/services/schedulerService.js';
 import { portfolioService } from '../../src/services/portfolioService.js';
+import { executionBridge } from '../../src/services/broker/executionBridge.js';
 
 describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil (Invest AI)', () => {
   it('isMarketOpen debe retornar true en horario activo de Wall Street (Lunes 10:00 AM NY)', () => {
@@ -54,9 +55,95 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
     assert.equal(isWithinCooldown, true);
   });
 
-  it('runPortfolioHealthCheck debe emitir alertas cuando hay posiciones en Take-Profit o Stop-Loss', async () => {
-    const tpPos = await portfolioService.addPosition({
-      symbol: 'TEST_TP',
+  it('runPortfolioHealthCheck debe ejecutar Auto-Close (SELL) en Moomoo y cerrar la posición ante Take-Profit', async () => {
+    let orderExecuted = false;
+    let orderPayload = null;
+    const origExecute = executionBridge.executeOrder;
+    executionBridge.executeOrder = async (params) => {
+      orderExecuted = true;
+      orderPayload = params;
+      return { success: true, mode: 'MOOMOO', orderId: 'moo_test_auto_close' };
+    };
+
+    try {
+      const tpPos = await portfolioService.addPosition({
+        symbol: 'TEST_TP',
+        shares: 10,
+        buyPrice: 100,
+        targetPrice: 110,
+        stopLoss: 90,
+        broker: 'Moomoo',
+      });
+
+      const currentPrice = 115;
+      portfolioService.memoryPositions.set(tpPos.id, {
+        ...tpPos,
+        currentPrice,
+        unrealizedPnL: 150,
+        unrealizedPnLPercent: 15,
+      });
+
+      const result = await schedulerService.runPortfolioHealthCheck('test_chat_123');
+      assert.ok(result.checkedAt);
+      assert.ok(result.triggersCount >= 1);
+      assert.equal(orderExecuted, true, 'Debe invocar executionBridge.executeOrder automáticamente');
+      assert.equal(orderPayload.symbol, 'TEST_TP');
+      assert.equal(orderPayload.side, 'SELL');
+      assert.equal(orderPayload.qty, 10);
+
+      const tpAlert = result.alerts.find((a) => a.trigger && a.trigger.symbol === 'TEST_TP');
+      assert.ok(tpAlert);
+      assert.equal(tpAlert.trigger.type, 'TAKE_PROFIT');
+      assert.equal(tpAlert.autoClosed, true);
+      assert.equal(tpAlert.sent, true);
+      assert.equal(tpAlert.closed.status, 'CLOSED');
+      assert.equal(tpAlert.closed.realizedPnL, 150);
+    } finally {
+      executionBridge.executeOrder = origExecute;
+    }
+  });
+
+  it('runPortfolioHealthCheck debe activar alerta de Protección Break-Even al alcanzar +1.5% intradía', async () => {
+    const bePos = await portfolioService.addPosition({
+      symbol: 'TEST_BE',
+      shares: 10,
+      buyPrice: 100,
+      targetPrice: 105,
+      stopLoss: 98,
+      broker: 'Moomoo',
+    });
+
+    // 1.8% de ganancia intradía (supera el nuevo umbral >= 1.5%)
+    portfolioService.memoryPositions.set(bePos.id, {
+      ...bePos,
+      currentPrice: 101.80,
+      unrealizedPnL: 18,
+      unrealizedPnLPercent: 1.8,
+    });
+
+    const result = await schedulerService.runPortfolioHealthCheck('test_chat_123');
+    const beAlert = result.alerts.find((a) => a.symbol === 'TEST_BE' && a.type === 'BREAK_EVEN');
+    assert.ok(beAlert, 'Debe activar alerta de Break-Even al superar +1.5%');
+    assert.equal(beAlert.sent, true);
+  });
+
+  it('isEodSession debe detectar la ventana final de 15 minutos (3:45 PM - 4:00 PM EST)', () => {
+    // 2026-09-21 es Lunes
+    const mondayEod = new Date('2026-09-21T15:50:00-04:00'); // 3:50 PM NY
+    const mondayMidday = new Date('2026-09-21T14:00:00-04:00'); // 2:00 PM NY
+    const mondayPost = new Date('2026-09-21T16:05:00-04:00'); // 4:05 PM NY
+    const saturdayEod = new Date('2026-09-26T15:50:00-04:00'); // Sábado
+
+    assert.equal(schedulerService.isEodSession(mondayEod), true, '3:50 PM Lunes es ventana EOD');
+    assert.equal(schedulerService.isEodSession(mondayMidday), false, '2:00 PM Lunes no es EOD');
+    assert.equal(schedulerService.isEodSession(mondayPost), false, '4:05 PM Lunes es post-cierre');
+    assert.equal(schedulerService.isEodSession(saturdayEod), false, 'Fin de semana no es EOD');
+  });
+
+  it('runPortfolioHealthCheck debe respetar el cooldown de 30m para no spamear alertas repetidas de salida', async () => {
+    // Posición abierta con cooldown previo registrado
+    const cdPos = await portfolioService.addPosition({
+      symbol: 'TEST_CD',
       shares: 10,
       buyPrice: 100,
       targetPrice: 110,
@@ -64,52 +151,20 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
       broker: 'Moomoo',
     });
 
-    const currentPrice = 115;
-    portfolioService.memoryPositions.set(tpPos.id, {
-      ...tpPos,
-      currentPrice,
+    portfolioService.memoryPositions.set(cdPos.id, {
+      ...cdPos,
+      currentPrice: 115,
       unrealizedPnL: 150,
       unrealizedPnLPercent: 15,
     });
 
-    const result = await schedulerService.runPortfolioHealthCheck('test_chat_123');
-    assert.ok(result.checkedAt);
-    assert.ok(result.triggersCount >= 1);
-    const tpAlert = result.alerts.find((a) => a.trigger && a.trigger.symbol === 'TEST_TP');
-    assert.ok(tpAlert);
-    assert.equal(tpAlert.trigger.type, 'TAKE_PROFIT');
-    assert.equal(tpAlert.sent, true);
-  });
+    // Registrar salida reciente en el historial de alertas
+    schedulerService.exitAlertHistory.set(cdPos.id, Date.now());
 
-  it('runPortfolioHealthCheck debe activar alerta de Protección Break-Even al alcanzar +4.0%', async () => {
-    const bePos = await portfolioService.addPosition({
-      symbol: 'TEST_BE',
-      shares: 10,
-      buyPrice: 100,
-      targetPrice: 112,
-      stopLoss: 92,
-      broker: 'Moomoo',
-    });
-
-    // 5% de ganancia (entre +4.0% y +8.0%)
-    portfolioService.memoryPositions.set(bePos.id, {
-      ...bePos,
-      currentPrice: 105,
-      unrealizedPnL: 50,
-      unrealizedPnLPercent: 5.0,
-    });
-
-    const result = await schedulerService.runPortfolioHealthCheck('test_chat_123');
-    const beAlert = result.alerts.find((a) => a.symbol === 'TEST_BE' && a.type === 'BREAK_EVEN');
-    assert.ok(beAlert);
-    assert.equal(beAlert.sent, true);
-  });
-
-  it('runPortfolioHealthCheck debe respetar el cooldown de 30m para no spamear alertas repetidas de salida', async () => {
-    const secondCheck = await schedulerService.runPortfolioHealthCheck('test_chat_123');
-    assert.ok(secondCheck.checkedAt);
-    const throttledAlert = secondCheck.alerts.find((a) => a.trigger && a.trigger.symbol === 'TEST_TP');
-    assert.ok(throttledAlert);
+    const check = await schedulerService.runPortfolioHealthCheck('test_chat_123');
+    assert.ok(check.checkedAt);
+    const throttledAlert = check.alerts.find((a) => a.trigger && a.trigger.symbol === 'TEST_CD');
+    assert.ok(throttledAlert, 'Debe encontrar la alerta throttled');
     assert.equal(throttledAlert.sent, false);
     assert.equal(throttledAlert.skipped, 'COOLDOWN');
   });

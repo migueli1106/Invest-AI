@@ -24,8 +24,10 @@ class LocalBridgeService {
     const now = Date.now();
     const expiresAt = now + this.ttlMs;
 
-    // 1. Reserva preventiva de capital
-    capitalManagerService.reserveCapital(bridgeOrderId, notional);
+    // 1. Reserva preventiva de capital (solo para BUY)
+    if (side !== 'SELL') {
+      capitalManagerService.reserveCapital(bridgeOrderId, notional);
+    }
 
     const orderRecord = {
       bridgeOrderId,
@@ -64,8 +66,10 @@ class LocalBridgeService {
       if (order.status === 'PENDING' && order.expiresAtMs <= now) {
         order.status = 'EXPIRED';
         order.expiredAt = new Date().toISOString();
-        capitalManagerService.releaseCapital(orderId, order.notional);
-        console.warn(`⏳ [LOCAL BRIDGE] Orden ${orderId} (${order.symbol}) expiró por TTL (>5m). Capital de $${order.notional} USD devuelto al pool.`);
+        if (order.side !== 'SELL') {
+          capitalManagerService.releaseCapital(orderId, order.notional);
+        }
+        console.warn(`⏳ [LOCAL BRIDGE] Orden ${orderId} (${order.symbol}) expiró por TTL (>5m).`);
       }
     }
   }
@@ -117,12 +121,14 @@ class LocalBridgeService {
       order.status = normStatus;
       order.resolvedAt = new Date().toISOString();
       order.notes = notes;
-      capitalManagerService.releaseCapital(bridgeOrderId, order.notional);
+      if (order.side !== 'SELL') {
+        capitalManagerService.releaseCapital(bridgeOrderId, order.notional);
+      }
       return {
         success: true,
         bridgeOrderId,
         status: normStatus,
-        capitalReleased: order.notional,
+        capitalReleased: order.side !== 'SELL' ? order.notional : 0,
       };
     }
 

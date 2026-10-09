@@ -124,8 +124,11 @@ describe('🔮 Pruebas de Generación de Señales y Gestión de Riesgo (Predicti
     assert.ok(signal.targetPrice > signal.entryPrice, 'Target Price debe estar por encima del precio de entrada');
     assert.ok(signal.riskRewardRatio >= 2.0, `Ratio R/B debe ser al menos 2.0 (actual: ${signal.riskRewardRatio})`);
     assert.ok(signal.confidence >= 60, 'Confianza debe ser de al menos 60% ante convergencia');
-    assert.ok(signal.timeHorizonDays >= 3 && signal.timeHorizonDays <= 7, 'Horizonte debe ser de 3 a 7 días');
-    assert.ok(signal.rationale.length >= 10, 'La justificación debe tener al menos 10 caracteres');
+    assert.equal(signal.timeHorizonDays, 1, 'Horizonte debe ser exactamente 1 día (Misma Sesión / Intradía)');
+    const riskPercent = ((signal.entryPrice - signal.stopLoss) / signal.entryPrice) * 100;
+    assert.ok(riskPercent >= 0.7 && riskPercent <= 1.6, `Riesgo intradía debe estar entre 0.8% y 1.5% (actual: ${riskPercent.toFixed(2)}%)`);
+    assert.ok(signal.rationale.includes('INTRADÍA'), 'La justificación debe etiquetarse como INTRADÍA');
+    assert.ok(signal.rationale.includes('Misma Sesión'), 'La justificación debe especificar Misma Sesión');
 
     // Validación formal con Zod
     const validation = TradingSignalSchema.safeParse(signal);
@@ -150,9 +153,13 @@ describe('🔮 Pruebas de Generación de Señales y Gestión de Riesgo (Predicti
 
     assert.equal(signal.symbol, 'BEAR_OVERBOUGHT');
     assert.equal(signal.action, 'SELL');
+    assert.equal(signal.timeHorizonDays, 1, 'Horizonte intradía debe ser 1 día');
     assert.ok(signal.stopLoss > signal.entryPrice, 'En SELL el Stop-Loss debe estar por encima de entrada');
     assert.ok(signal.targetPrice < signal.entryPrice, 'En SELL el Target Price debe estar por debajo de entrada');
     assert.ok(signal.riskRewardRatio >= 2.0, 'El ratio R/B debe mantenerse en mínimo 1:2');
+    const sellRiskPercent = ((signal.stopLoss - signal.entryPrice) / signal.entryPrice) * 100;
+    assert.ok(sellRiskPercent >= 0.7 && sellRiskPercent <= 1.6, `Riesgo intradía SELL debe estar en rango (actual: ${sellRiskPercent.toFixed(2)}%)`);
+    assert.ok(signal.rationale.includes('INTRADÍA'));
 
     const validation = TradingSignalSchema.safeParse(signal);
     assert.ok(validation.success, 'La señal SELL debe cumplir TradingSignalSchema');
@@ -176,9 +183,11 @@ describe('🔮 Pruebas de Generación de Señales y Gestión de Riesgo (Predicti
 
     assert.equal(signal.symbol, 'BEAR_TREND');
     assert.equal(signal.action, 'SELL');
+    assert.equal(signal.timeHorizonDays, 1);
     assert.ok(signal.stopLoss > signal.entryPrice);
     assert.ok(signal.targetPrice < signal.entryPrice);
     assert.ok(signal.riskRewardRatio >= 2.0);
+    assert.ok(signal.rationale.includes('INTRADÍA'));
 
     const validation = TradingSignalSchema.safeParse(signal);
     assert.ok(validation.success, 'La señal SELL por cruce bajista debe cumplir TradingSignalSchema');
@@ -201,9 +210,11 @@ describe('🔮 Pruebas de Generación de Señales y Gestión de Riesgo (Predicti
 
     assert.equal(signal.symbol, 'SIDEWAYS_ASSET');
     assert.equal(signal.action, 'HOLD');
+    assert.equal(signal.timeHorizonDays, 1);
     assert.ok(signal.stopLoss > 0);
     assert.ok(signal.targetPrice > 0);
     assert.equal(signal.confidence, 50, 'En HOLD la confianza debe mantenerse neutral (50%)');
+    assert.ok(signal.rationale.includes('INTRADÍA'));
 
     const validation = TradingSignalSchema.safeParse(signal);
     assert.ok(validation.success, 'La señal HOLD debe cumplir TradingSignalSchema');

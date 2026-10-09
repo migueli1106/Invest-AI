@@ -2,6 +2,7 @@ import { env } from '../config/environment.js';
 import { predictionEngine } from './predictionEngine.js';
 import { portfolioService } from './portfolioService.js';
 import { telegramService } from './telegramService.js';
+import { executionBridge } from './broker/executionBridge.js';
 
 /**
  * ⏰ [INVEST AI] Servicio de Monitoreo Continuo Bursátil y Horario de Wall Street
@@ -21,35 +22,38 @@ class SchedulerService {
    * @param {Date} [date=new Date()]
    * @returns {boolean}
    */
+  /** Helper unificado para descomponer la fecha en hora bursátil de Nueva York. */
+  getNyParts(date = new Date()) {
+    const nyParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday: 'short',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    }).formatToParts(date);
+    let weekday = '', hour = 0, minute = 0;
+    for (const part of nyParts) {
+      if (part.type === 'weekday') weekday = part.value;
+      if (part.type === 'hour') hour = parseInt(part.value, 10);
+      if (part.type === 'minute') minute = parseInt(part.value, 10);
+    }
+    return { weekday, totalMinutes: (hour === 24 ? 0 : hour) * 60 + minute };
+  }
+
   isMarketOpen(date = new Date()) {
     try {
-      const nyParts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York',
-        weekday: 'short',
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: false,
-      }).formatToParts(date);
+      const { weekday, totalMinutes } = this.getNyParts(date);
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday) && totalMinutes >= 570 && totalMinutes < 960;
+    } catch {
+      return false;
+    }
+  }
 
-      let weekday = '';
-      let hour = 0;
-      let minute = 0;
-
-      for (const part of nyParts) {
-        if (part.type === 'weekday') weekday = part.value;
-        if (part.type === 'hour') hour = parseInt(part.value, 10);
-        if (part.type === 'minute') minute = parseInt(part.value, 10);
-      }
-
-      if (hour === 24) hour = 0;
-
-      const businessDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-      if (!businessDays.includes(weekday)) return false;
-
-      const totalMinutes = hour * 60 + minute;
-      return totalMinutes >= (9 * 60 + 30) && totalMinutes < (16 * 60);
-    } catch (err) {
-      console.warn(`⚠️ [SCHEDULER] Error al evaluar horario bursátil: ${err.message}`);
+  isEodSession(date = new Date()) {
+    try {
+      const { weekday, totalMinutes } = this.getNyParts(date);
+      return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday) && totalMinutes >= 945 && totalMinutes < 960;
+    } catch {
       return false;
     }
   }
@@ -142,20 +146,20 @@ class SchedulerService {
     const alertResults = [];
     const now = Date.now();
 
-    // 1. Evaluación de Protección Break-Even (+4.0% de ganancia no realizada)
+    // 1. Evaluación de Protección Break-Even (+1.5% de ganancia no realizada)
     for (const pos of (performance.positions || [])) {
       const pnlPct = Number(pos.unrealizedPnLPercent || 0);
-      if (pnlPct >= 4.0 && pnlPct < 8.0) {
+      if (pnlPct >= 1.5 && pnlPct < 8.0) {
         const beKey = `be_${pos.id || pos.symbol}`;
         const lastBe = this.exitAlertHistory.get(beKey);
         if (!lastBe || now - lastBe >= this.EXIT_COOLDOWN_MS) {
           const buyPrice = Number(pos.averageBuyPrice || pos.buyPrice || 0);
           const beMsg = [
-            `🛡️ *¡PROTECCIÓN BREAK-EVEN DISPONIBLE EN MOOMOO!*`,
+            `🛡️ *¡PROTECCIÓN BREAK-EVEN INTRADÍA!*`,
             ``,
-            `Tu posición en *${pos.symbol}* ha alcanzado *+${pnlPct.toFixed(1)}%* de beneficio no realizado.`,
+            `Tu posición en *${pos.symbol}* ha alcanzado *+${pnlPct.toFixed(1)}%* intradía.`,
             `🎯 *Acción de Protección:* Ajusta tu Stop-Loss al precio de entrada (*$${buyPrice.toFixed(2)}*).`,
-            `Eliminas el riesgo a $0.00 mientras buscas el Take-Profit (+8% a +12%).`,
+            `Eliminas el riesgo a $0.00 en la misma sesión mientras buscas el Target.`,
           ].join('\n');
           try {
             await telegramService.sendMessage(targetChatId, beMsg, { parse_mode: 'Markdown' });
@@ -168,44 +172,74 @@ class SchedulerService {
       }
     }
 
-    // 2. Evaluación de Triggers de Salida (Take-Profit & Stop-Loss)
+    // 2. Verificación de Cierre de Sesión EOD (3:45 PM - 4:00 PM EST)
+    if (this.isEodSession()) {
+      for (const pos of (performance.positions || [])) {
+        const pnlPct = Number(pos.unrealizedPnLPercent || 0);
+        const eodKey = `eod_${pos.id || pos.symbol}`;
+        const lastEod = this.exitAlertHistory.get(eodKey);
+        if (!lastEod || now - lastEod >= this.EXIT_COOLDOWN_MS) {
+          const eodMsg = [
+            `⏰ *¡ALERTA DE CIERRE DE SESIÓN (EOD - 15M RESTANTES)!*`,
+            ``,
+            `Wall Street cierra en menos de 15 minutos (3:45 PM EST).`,
+            `• *Posición:* ${pos.symbol} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L)`,
+            `• *Recomendación Day Trading:* Toma utilidades o cierra la orden para evitar riesgo y gaps overnight.`,
+          ].join('\n');
+          try {
+            await telegramService.sendMessage(targetChatId, eodMsg, { parse_mode: 'Markdown' });
+            this.exitAlertHistory.set(eodKey, now);
+            alertResults.push({ symbol: pos.symbol, type: 'EOD_CLOSE', sent: true });
+          } catch (eodErr) {
+            console.error(`❌ [SCHEDULER] Error EOD alerta para ${pos.symbol}: ${eodErr.message}`);
+          }
+        }
+      }
+    }
+
+    // 3. Ejecución Autónoma de Salidas (Auto-Close por Take-Profit o Stop-Loss)
     for (const trigger of triggers) {
       const posKey = String(trigger.positionId || trigger.symbol);
       const lastExitAlert = this.exitAlertHistory.get(posKey);
 
       if (lastExitAlert && now - lastExitAlert < this.EXIT_COOLDOWN_MS) {
-        console.info(`⏳ [SCHEDULER] Omitiendo alerta repetida de salida para ${trigger.symbol} (${trigger.type}) - En enfriamiento de 30m.`);
+        console.info(`⏳ [SCHEDULER] Omitiendo salida repetida para ${trigger.symbol} (${trigger.type}) - En enfriamiento.`);
         alertResults.push({ trigger, sent: false, skipped: 'COOLDOWN' });
         continue;
       }
 
-      const brokerName = (trigger.broker || 'MOOMOO').toUpperCase();
-      let alertMessage = '';
-
-      if (trigger.type === 'TAKE_PROFIT') {
-        alertMessage = [
-          `🚨 *¡OBJETIVO ALCANZADO EN ${brokerName}!*`,
-          ``,
-          `Tu posición en *${trigger.symbol}* ha tocado el Target Price ($${trigger.thresholdPrice.toFixed(2)}).`,
-          `📈 Ganancia: +${trigger.unrealizedPnLPercent.toFixed(1)}% ($${trigger.unrealizedPnL.toFixed(2)} USD).`,
-          `📱 *Acción recomendada:* Abre tu broker (${brokerName}) y ejecuta la VENTA para asegurar beneficios.`,
-        ].join('\n');
-      } else {
-        alertMessage = [
-          `⚠️ *¡STOP LOSS ACTIVADO EN ${brokerName}!*`,
-          ``,
-          `Tu posición en *${trigger.symbol}* ha tocado el Stop Loss ($${trigger.thresholdPrice.toFixed(2)}).`,
-          `📉 Pérdida controlada: ${trigger.unrealizedPnLPercent.toFixed(1)}% ($${trigger.unrealizedPnL.toFixed(2)} USD).`,
-          `📱 *Acción recomendada:* Abre tu broker (${brokerName}) y ejecuta la VENTA para proteger tu capital.`,
-        ].join('\n');
-      }
+      const motivo = trigger.type === 'TAKE_PROFIT'
+        ? '🎯 Target Alcanzado (Take-Profit)'
+        : '🛑 Stop-Loss Protector';
 
       try {
+        // 1. Despachar automáticamente orden de venta
+        await executionBridge.executeOrder({
+          symbol: trigger.symbol,
+          qty: trigger.shares,
+          currentPrice: trigger.currentPrice,
+          side: 'SELL',
+        });
+
+        // 2. Cerrar posición en portafolio y rotar capital
+        const closed = await portfolioService.closePosition(trigger.positionId, trigger.currentPrice);
+
+        // 3. Notificación informativa a Telegram
+        const alertMessage = [
+          `🎉 *¡POSICIÓN CERRADA AUTOMÁTICAMENTE EN MOOMOO!*`,
+          ``,
+          `• *Activo:* ${trigger.symbol}`,
+          `• *Motivo:* ${motivo}`,
+          `• *Precio Salida:* $${trigger.currentPrice.toFixed(2)}`,
+          `• *Resultado P&L:* ${closed.realizedPnL >= 0 ? '🟢 Ganancia: +' : '🔴 Pérdida: '}$${closed.realizedPnL} USD (${closed.realizedPnLPercent >= 0 ? '+' : ''}${closed.realizedPnLPercent}%)`,
+          `• *Capital Liberado:* Fondos devueltos a tu saldo disponible para nuevas operaciones.`,
+        ].join('\n');
+
         const sendResult = await telegramService.sendMessage(targetChatId, alertMessage, { parse_mode: 'Markdown' });
         this.exitAlertHistory.set(posKey, now);
-        alertResults.push({ trigger, sent: true, sendResult });
+        alertResults.push({ trigger, closed, autoClosed: true, sent: true, sendResult });
       } catch (err) {
-        console.error(`❌ [SCHEDULER] Error enviando alerta de salida para ${trigger.symbol}: ${err.message}`);
+        console.error(`❌ [SCHEDULER] Error ejecutando auto-close para ${trigger.symbol}: ${err.message}`);
         alertResults.push({ trigger, sent: false, error: err.message });
       }
     }

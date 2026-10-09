@@ -73,24 +73,24 @@ class PredictionEngine {
     let rationale;
 
     if (action === 'BUY') {
-      timeHorizonDays = 5;
+      timeHorizonDays = 1;
 
-      // Stop-loss fijado bajo soporte reciente o entre 3% y 5% de riesgo
+      // Stop-loss intradía fijado bajo soporte reciente o 1.0% de riesgo por defecto (0.8% - 1.2%)
       if (sr.support > 0 && sr.support < entryPrice) {
         const supportRisk = (entryPrice - sr.support) / entryPrice;
-        if (supportRisk >= 0.01 && supportRisk <= 0.05) {
-          stopLoss = parseFloat((sr.support * 0.995).toFixed(2));
-        } else if (supportRisk < 0.01) {
-          stopLoss = parseFloat((entryPrice * 0.97).toFixed(2)); // 3% riesgo mínimo técnico
+        if (supportRisk >= 0.008 && supportRisk <= 0.012) {
+          stopLoss = parseFloat(sr.support.toFixed(2));
+        } else if (supportRisk < 0.008) {
+          stopLoss = parseFloat((entryPrice * 0.992).toFixed(2)); // 0.8% riesgo mínimo intradía
         } else {
-          stopLoss = parseFloat((entryPrice * 0.95).toFixed(2)); // tope 5% de riesgo
+          stopLoss = parseFloat((entryPrice * 0.99).toFixed(2)); // 1.0% riesgo por defecto
         }
       } else {
-        stopLoss = parseFloat((entryPrice * 0.965).toFixed(2)); // 3.5% riesgo por defecto
+        stopLoss = parseFloat((entryPrice * 0.99).toFixed(2)); // 1.0% riesgo por defecto
       }
 
       if (stopLoss >= entryPrice) {
-        stopLoss = parseFloat((entryPrice * 0.965).toFixed(2));
+        stopLoss = parseFloat((entryPrice * 0.99).toFixed(2));
       }
 
       const riskPerUnit = entryPrice - stopLoss;
@@ -107,27 +107,25 @@ class PredictionEngine {
       if (entryPrice > sr.support) score += 5;
       confidence = Math.min(95, Math.max(50, score));
 
-      rationale = `Señal de COMPRA para ${cleanSymbol}: Tendencia alcista confirmada (EMA20 $${ema20.toFixed(2)} > EMA50 $${ema50.toFixed(2)}), RSI en ${rsi.toFixed(1)} en zona de impulso e histograma MACD positivo (+${macd.histogram.toFixed(2)}). Stop-Loss en $${stopLoss.toFixed(2)} bajo soporte reciente ($${sr.support.toFixed(2)}) y Target en $${targetPrice.toFixed(2)} (R/B ${riskRewardRatio}:1).`;
+      rationale = `Señal INTRADÍA para ${cleanSymbol}: Tendencia alcista confirmada (EMA20 $${ema20.toFixed(2)} > EMA50 $${ema50.toFixed(2)}), RSI en ${rsi.toFixed(1)} e histograma MACD positivo (+${macd.histogram.toFixed(2)}). Horizonte: Misma Sesión (Intradía). Target $${targetPrice.toFixed(2)} (+${expectedReturnPercent.toFixed(2)}%) | Stop-Loss $${stopLoss.toFixed(2)} (R/B ${riskRewardRatio}:1).`;
 
     } else if (action === 'SELL') {
-      timeHorizonDays = 4;
+      timeHorizonDays = 1;
 
-      // Stop-loss fijado sobre resistencia o entre 3% y 5% por encima
+      // Stop-loss intradía fijado en 1.0% de riesgo por defecto o sobre resistencia (0.8% - 1.2%)
       if (sr.resistance > entryPrice) {
         const resistanceRisk = (sr.resistance - entryPrice) / entryPrice;
-        if (resistanceRisk >= 0.01 && resistanceRisk <= 0.05) {
-          stopLoss = parseFloat((sr.resistance * 1.005).toFixed(2));
-        } else if (resistanceRisk < 0.01) {
-          stopLoss = parseFloat((entryPrice * 1.03).toFixed(2));
+        if (resistanceRisk >= 0.008 && resistanceRisk <= 0.012) {
+          stopLoss = parseFloat(sr.resistance.toFixed(2));
         } else {
-          stopLoss = parseFloat((entryPrice * 1.05).toFixed(2));
+          stopLoss = parseFloat((entryPrice * 1.01).toFixed(2)); // 1.0% de riesgo exacto
         }
       } else {
-        stopLoss = parseFloat((entryPrice * 1.035).toFixed(2));
+        stopLoss = parseFloat((entryPrice * 1.01).toFixed(2)); // 1.0% de riesgo por defecto
       }
 
       if (stopLoss <= entryPrice) {
-        stopLoss = parseFloat((entryPrice * 1.035).toFixed(2));
+        stopLoss = parseFloat((entryPrice * 1.01).toFixed(2));
       }
 
       const riskPerUnit = stopLoss - entryPrice;
@@ -146,12 +144,12 @@ class PredictionEngine {
         ? `Sobrecompra extrema con RSI en ${rsi.toFixed(1)}`
         : `Cruce bajista técnico (EMA20 $${ema20.toFixed(2)} < EMA50 $${ema50.toFixed(2)}) e histograma MACD negativo (${macd.histogram.toFixed(2)})`;
 
-      rationale = `Señal de VENTA para ${cleanSymbol}: ${sellReason}. Proyección correctiva hacia objetivo $${targetPrice.toFixed(2)} con Stop-Loss protector en $${stopLoss.toFixed(2)} (R/B ${riskRewardRatio}:1).`;
+      rationale = `Señal INTRADÍA para ${cleanSymbol}: ${sellReason}. Horizonte: Misma Sesión (Intradía). Proyección correctiva hacia Target $${targetPrice.toFixed(2)} (${expectedReturnPercent.toFixed(2)}%) | Stop-Loss $${stopLoss.toFixed(2)} (R/B ${riskRewardRatio}:1).`;
 
     } else {
       // HOLD / NEUTRAL
-      timeHorizonDays = 5;
-      stopLoss = parseFloat((entryPrice * 0.96).toFixed(2));
+      timeHorizonDays = 1;
+      stopLoss = parseFloat((entryPrice * 0.99).toFixed(2));
       const riskPerUnit = entryPrice - stopLoss;
       const rewardPerUnit = riskPerUnit * 2.0;
       targetPrice = parseFloat((entryPrice + rewardPerUnit).toFixed(2));
@@ -159,7 +157,7 @@ class PredictionEngine {
       expectedReturnPercent = parseFloat((((targetPrice - entryPrice) / entryPrice) * 100).toFixed(2));
       confidence = 50;
 
-      rationale = `Señal NEUTRAL (HOLD) para ${cleanSymbol}: Mercado en consolidación o señales técnicas mixtas. EMA20 ($${ema20.toFixed(2)}) vs EMA50 ($${ema50.toFixed(2)}), RSI en ${rsi.toFixed(1)} e histograma MACD en ${macd.histogram.toFixed(2)}. Se recomienda prudencia hasta validar ruptura de canal ($${sr.support.toFixed(2)} - $${sr.resistance.toFixed(2)}).`;
+      rationale = `Señal INTRADÍA NEUTRAL (HOLD) para ${cleanSymbol}: Mercado en consolidación o señales técnicas mixtas. Horizonte: Misma Sesión (Intradía). Soporte $${sr.support.toFixed(2)} - Resistencia $${sr.resistance.toFixed(2)}. Target $${targetPrice.toFixed(2)} | Stop-Loss $${stopLoss.toFixed(2)} (R/B ${riskRewardRatio}:1).`;
     }
 
     const expiresDate = new Date();

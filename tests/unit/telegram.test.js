@@ -41,6 +41,8 @@ describe('✈️ Suite de Pruebas Unitarias: Telegram Bot API & Webhook', () => 
     assert.ok(result.text.includes('NVDA'));
     assert.ok(result.text.includes('COMPRA (BUY)'));
     assert.ok(result.text.includes('228.87'));
+    assert.ok(result.text.includes('DAY TRADING (INTRADÍA)'), 'Debe titularse ALERTA DAY TRADING (INTRADÍA)');
+    assert.ok(result.text.includes('Intradía (Misma Sesión)'), 'Debe indicar horizonte Intradía');
   });
 
   it('telegramService.answerCallbackQuery debe retornar simulación en ausencia de token', async () => {

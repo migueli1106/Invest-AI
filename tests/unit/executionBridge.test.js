@@ -74,6 +74,26 @@ describe('🌉 Suite de Pruebas Unitarias: Execution Bridge & Broker Desacoplado
     assert.ok(res.orderId);
   });
 
+  it('Modo MOOMOO: debe despachar orden de venta SELL con qty explícito sin exigir reserva de capital', async () => {
+    // Agotar deliberadamente el efectivo disponible para comprobar que la venta no requiere liquidez previa
+    capitalManagerService.availableCash = 0.00;
+
+    const res = await executionBridge.executeOrder({
+      symbol: 'AAPL',
+      qty: 2,
+      currentPrice: 220.00,
+      side: 'SELL',
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(res.mode, 'MOOMOO');
+    assert.equal(res.broker, 'Moomoo');
+    assert.equal(res.symbol, 'AAPL');
+    assert.equal(res.side, 'SELL');
+    assert.equal(res.qty, 2);
+    assert.ok(res.orderId);
+  });
+
   // 3. Capital Dinámico Multi-Posición: Ejecución fluida sin bloqueos
   it('Debe permitir ejecutar órdenes consecutivas para múltiples activos sin bloquear por pool agotado', async () => {
     capitalManagerService.reserveCapital('ord_prev', 35.00);

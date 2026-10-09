@@ -45,7 +45,7 @@ class WhatsAppService {
       `• *Target Price:* $${signal.targetPrice.toFixed(2)} (${signal.expectedReturnPercent >= 0 ? '+' : ''}${signal.expectedReturnPercent.toFixed(2)}%)`,
       `• *Stop Loss:* $${signal.stopLoss.toFixed(2)}`,
       `• *Ratio R/B:* ${signal.riskRewardRatio.toFixed(2)} : 1`,
-      `• *Horizonte:* ${signal.timeHorizonDays} días hábiles`,
+      `• *Horizonte:* ${signal.timeHorizonDays === 1 ? 'Intradía (Misma Sesión)' : `${signal.timeHorizonDays} días hábiles`}`,
       `• *Confianza:* ${signal.confidence}%`,
       ``,
       `💡 *Explicabilidad:*`,
