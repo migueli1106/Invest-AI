@@ -122,4 +122,27 @@ describe('💼 Suite de Pruebas Unitarias: Gestión de Portafolio y Métricas P&
     const validation = PortfolioHoldingSchema.safeParse(closed);
     assert.ok(validation.success, `Documento cerrado debe cumplir PortfolioHoldingSchema: ${JSON.stringify(validation.error)}`);
   });
+
+  it('updatePositionStopLoss debe persistir el nuevo stopLoss y breakEvenApplied: true', async () => {
+    const pos = await portfolioService.addPosition({
+      symbol: 'SLTEST',
+      shares: 5,
+      buyPrice: 50,
+      broker: 'Moomoo',
+      stopLoss: 47,
+      targetPrice: 56,
+    });
+
+    const updated = await portfolioService.updatePositionStopLoss(pos.id, 50);
+    assert.equal(updated.stopLoss, 50);
+    assert.equal(updated.breakEvenApplied, true);
+
+    const stored = portfolioService.localPositions.find((p) => p.id === pos.id);
+    assert.equal(stored.stopLoss, 50);
+    assert.equal(stored.breakEvenApplied, true);
+    assert.ok(stored.lastUpdated);
+
+    await assert.rejects(() => portfolioService.updatePositionStopLoss(pos.id, -1), /inválido/);
+    await assert.rejects(() => portfolioService.updatePositionStopLoss(pos.id, 'abc'), /inválido/);
+  });
 });

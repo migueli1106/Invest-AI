@@ -173,6 +173,29 @@ class PortfolioService {
     return { id: positionId, ...currentData, ...updateFields };
   }
 
+  /** Ajusta el Stop-Loss (Break-Even automático): persiste en Firestore y memoria, marca breakEvenApplied. */
+  async updatePositionStopLoss(positionId, newStopLoss) {
+    const cleanStop = Number(newStopLoss);
+    if (!Number.isFinite(cleanStop) || cleanStop <= 0) throw new Error(`Stop-Loss inválido: ${newStopLoss}`);
+
+    const updateFields = {
+      stopLoss: Number(cleanStop.toFixed(2)),
+      breakEvenApplied: true,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    if (!this.isTest()) {
+      try {
+        await getPortfolioCollection().doc(positionId).update(updateFields);
+      } catch (err) {
+        console.warn(`⚠️ [FIRESTORE] Actualización de Stop-Loss simulada: ${err.message}`);
+      }
+    }
+
+    const local = this.localPositions.find((p) => p.id === positionId);
+    if (local) Object.assign(local, updateFields);
+    return { id: positionId, ...(local || {}), ...updateFields };
+  }
 
   /**
    * Calcula el rendimiento consolidado del portafolio.

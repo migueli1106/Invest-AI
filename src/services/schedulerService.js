@@ -190,24 +190,28 @@ class SchedulerService {
     const alertResults = [];
     const now = Date.now();
 
-    // 1. Evaluación de Protección Break-Even (+1.5% de ganancia no realizada)
+    // 1. Break-Even 100% automático (+1.5%): ajusta Stop-Loss al precio de entrada (disparo único)
     for (const pos of (performance.positions || [])) {
       const pnlPct = Number(pos.unrealizedPnLPercent || 0);
-      if (pnlPct >= 1.5 && pnlPct < 8.0) {
-        const beKey = `be_${pos.id || pos.symbol}`;
-        const lastBe = this.exitAlertHistory.get(beKey);
-        if (!lastBe || now - lastBe >= this.EXIT_COOLDOWN_MS) {
-          const buyPrice = Number(pos.averageBuyPrice || pos.buyPrice || 0);
-          const beMsg = `🛡️ *¡PROTECCIÓN BREAK-EVEN INTRADÍA!*\n\nTu posición en *${pos.symbol}* ha alcanzado *+${pnlPct.toFixed(1)}%* intradía.\n` +
-            `🎯 *Acción de Protección:* Ajusta tu Stop-Loss al precio de entrada (*$${buyPrice.toFixed(2)}*).\nEliminas el riesgo a $0.00 en la misma sesión mientras buscas el Target.`;
-          try {
-            await telegramService.sendMessage(targetChatId, beMsg, { parse_mode: 'Markdown' });
-            this.exitAlertHistory.set(beKey, now);
-            alertResults.push({ symbol: pos.symbol, type: 'BREAK_EVEN', sent: true });
-          } catch (beErr) {
-            console.error(`❌ [SCHEDULER] Error break-even alerta para ${pos.symbol}: ${beErr.message}`);
-          }
-        }
+      const buyPrice = Number(pos.averageBuyPrice || pos.buyPrice || 0);
+      if (pnlPct < 1.5 || pnlPct >= 8.0 || pos.breakEvenApplied === true || !(buyPrice > 0)) continue;
+
+      try {
+        await portfolioService.updatePositionStopLoss(pos.id, buyPrice);
+        pos.stopLoss = buyPrice;
+        pos.breakEvenApplied = true;
+      } catch (updErr) {
+        console.error(`❌ [SCHEDULER] No se pudo ajustar Stop-Loss de ${pos.symbol}: ${updErr.message}`);
+        continue;
+      }
+
+      const beMsg = telegramService.buildBreakEvenMessage(pos.symbol, pnlPct, buyPrice);
+      try {
+        await telegramService.sendMessage(targetChatId, beMsg, { parse_mode: 'Markdown' });
+        alertResults.push({ symbol: pos.symbol, type: 'BREAK_EVEN', sent: true, stopLoss: buyPrice });
+      } catch (beErr) {
+        console.error(`❌ [SCHEDULER] Error notificando break-even de ${pos.symbol}: ${beErr.message}`);
+        alertResults.push({ symbol: pos.symbol, type: 'BREAK_EVEN', sent: false, stopLoss: buyPrice });
       }
     }
 

@@ -31,6 +31,22 @@ class TelegramService {
   }
 
   /**
+   * Tarjeta informativa de Break-Even automático (sin solicitar acción al usuario).
+   */
+  buildBreakEvenMessage(symbol, pnlPct, buyPrice) {
+    return [
+      '🛡️ *¡STOP-LOSS AJUSTADO AUTOMÁTICAMENTE A BREAK-EVEN!*',
+      '',
+      `• *Activo:* ${symbol}`,
+      `• *Ganancia Actual:* +${Number(pnlPct).toFixed(1)}% intradía`,
+      `• *Nuevo Stop-Loss:* $${Number(buyPrice).toFixed(2)} (Precio de Entrada)`,
+      '• *Riesgo Actual:* $0.00 USD (Operación Blindada)',
+      '',
+      '🤖 El sistema continuará custodiando la posición para vender automáticamente al tocar el Target.',
+    ].join('\n');
+  }
+
+  /**
    * Envía un mensaje de texto a un chat de Telegram.
    * @param {string|number} chatId - ID del chat o usuario
    * @param {string} text - Contenido del mensaje (Markdown o texto plano)

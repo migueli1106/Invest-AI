@@ -106,7 +106,7 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
     }
   });
 
-  it('runPortfolioHealthCheck debe activar alerta de Protección Break-Even al alcanzar +1.5% intradía', async () => {
+  it('runPortfolioHealthCheck debe ajustar automáticamente el Stop-Loss a Break-Even al alcanzar +1.5% y no repetir', async () => {
     const bePos = await portfolioService.addPosition({
       symbol: 'TEST_BE',
       shares: 10,
@@ -116,7 +116,7 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
       broker: 'Moomoo',
     });
 
-    // 1.8% de ganancia intradía (supera el nuevo umbral >= 1.5%)
+    // 1.8% de ganancia intradía (supera el umbral >= 1.5%)
     portfolioService.memoryPositions.set(bePos.id, {
       ...bePos,
       currentPrice: 101.80,
@@ -126,8 +126,18 @@ describe('⏰ Suite de Pruebas Unitarias: Monitoreo Continuo y Horario Bursátil
 
     const result = await schedulerService.runPortfolioHealthCheck('test_chat_123');
     const beAlert = result.alerts.find((a) => a.symbol === 'TEST_BE' && a.type === 'BREAK_EVEN');
-    assert.ok(beAlert, 'Debe activar alerta de Break-Even al superar +1.5%');
+    assert.ok(beAlert, 'Debe ajustar Break-Even al superar +1.5%');
     assert.equal(beAlert.sent, true);
+    assert.equal(beAlert.stopLoss, 100);
+
+    const stored = portfolioService.localPositions.find((p) => p.id === bePos.id);
+    assert.equal(stored.stopLoss, 100);
+    assert.equal(stored.breakEvenApplied, true);
+
+    // Disparo único: segunda ejecución no vuelve a ajustar ni notificar
+    const second = await schedulerService.runPortfolioHealthCheck('test_chat_123');
+    const again = second.alerts.find((a) => a.symbol === 'TEST_BE' && a.type === 'BREAK_EVEN');
+    assert.equal(again, undefined, 'No debe repetir el Break-Even si breakEvenApplied: true');
   });
 
   it('isEodSession debe detectar la ventana final de 15 minutos (3:45 PM - 4:00 PM EST)', () => {
